@@ -115,60 +115,64 @@ body.toc-open #toc{transform:none}
 .toc-item.active .ti-num{color:var(--accent)}
 
 /* ------------------------------------------------------------------ 正文 */
-#reader{
-  position:fixed;left:0;right:0;top:var(--header-h);bottom:0;
-  overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
+/* 两种模式都是「分页」：#viewport 是一页的可见区域（版心），#book 在里面按列排布，
+   翻页 = 给 #book 加 translateX(页号 × 页宽)。下一页永远在当前页左侧，
+   所以「向右滑动/拖动」= 下一页，横排竖排一致。 */
+#reader{position:fixed;left:0;right:0;top:var(--header-h);bottom:0;overflow:hidden}
+#stage{
+  position:absolute;inset:0;background:var(--stage-bg);
+  --pad-y:34px;--pad-x:22px;
+  touch-action:pinch-zoom;      /* 拖拽由脚本处理，仅保留双指缩放 */
 }
-#stage{position:relative;min-height:100%}
-#viewport{position:static}
+body.dragging #stage{user-select:none;-webkit-user-select:none}
+body.dragging{cursor:grabbing}
+#viewport{position:absolute;overflow:hidden}
 #book{
-  max-width:calc(var(--measure) * 1em + 3.2em);
-  margin:0 auto;padding:2.6em 1.6em 32vh;
+  margin:0;padding:0;
   font-family:var(--book-font),serif;
   font-size:var(--fs);line-height:var(--pitch);letter-spacing:var(--ls);
-  color:var(--fg);
+  color:var(--fg);will-change:transform;
 }
-.para{
-  margin:0 0 var(--gap);text-indent:2em;text-align:justify;
-  transition:background .35s var(--ease);
-}
+/* 竖排用来把下一篇推到页首的空白块 */
+.pgbreak{margin:0;padding:0;border:0;height:0}
+
+.para{text-indent:2em;text-align:justify;transition:background .35s var(--ease)}
 .chapter{position:relative}
-.ch-head{
-  margin:3em 0 1.5em;text-align:center;font-weight:400;line-height:1.5;
-  letter-spacing:.1em;
-}
-.ch-top{
-  display:block;font-size:.6em;letter-spacing:.34em;color:var(--fg-dim);
-  margin-bottom:.9em;text-indent:0;
-}
-.ch-name{display:block;font-size:1.46em;letter-spacing:.16em;color:var(--fg)}
-.ch-head::after{
-  content:"";display:block;width:2.6em;height:1px;margin:1.15em auto 0;
-  background:var(--line);
-}
-.chapter:first-child .ch-head{margin-top:.4em}
+.ch-head{font-weight:400;letter-spacing:.1em}
+.ch-top{color:var(--fg-dim);text-indent:0}
+.ch-name{color:var(--fg)}
 mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 .06em}
 mark.cur{background:var(--mark-cur);box-shadow:0 0 0 1px color-mix(in srgb,var(--mark-cur) 60%,transparent)}
 .flash{background:color-mix(in srgb,var(--accent) 12%,transparent)}
 
-/* ------------------------------------------------- 竖排（右起，分页翻页） */
-body[data-mode="v"] #reader{overflow:hidden}
-body[data-mode="v"] #stage{
-  position:absolute;inset:0;overflow:hidden;background:var(--stage-bg);
-  --pad-y:26px;--pad-x:22px;
+/* ------------------------------------------------- 横排（分页，列自右向左） */
+body[data-mode="h"] #viewport{
+  top:var(--pad-y);bottom:calc(var(--pad-y) + 20px);left:0;right:0;margin:0 auto;
 }
-/* 版心：只在页面留白之内裁切，相邻页的列不会透出来 */
-body[data-mode="v"] #viewport{
-  position:absolute;inset:var(--pad-y) var(--pad-x);overflow:hidden;
+body[data-mode="h"] #book{
+  direction:rtl;               /* 列从右往左排：与竖排同一套翻页方向 */
+  width:100%;height:100%;
+  column-fill:auto;column-gap:0;
 }
+body[data-mode="h"] .para{direction:ltr;margin:0 0 var(--gap)}
+/* 每篇从新的一页开始，篇名落在页首 */
+body[data-mode="h"] .chapter + .chapter{break-before:column}
+body[data-mode="h"] .ch-head{margin:0 0 1.3em;text-align:center;line-height:1.5}
+body[data-mode="h"] .ch-top{display:block;font-size:.6em;letter-spacing:.34em;margin-bottom:.9em}
+body[data-mode="h"] .ch-name{display:block;font-size:1.46em;letter-spacing:.16em}
+body[data-mode="h"] .ch-head::after{
+  content:"";display:block;width:2.6em;height:1px;margin:1.15em auto 0;background:var(--line);
+}
+
+/* ------------------------------------------------- 竖排（右起，分页） */
+body[data-mode="v"] #viewport{top:var(--pad-y);bottom:calc(var(--pad-y) + 20px)}
 body[data-mode="v"] #book{
   writing-mode:vertical-rl;text-orientation:mixed;
-  width:100%;height:100%;max-width:none;margin:0;padding:0;
-  will-change:transform;
+  width:100%;height:100%;
 }
-body[data-mode="v"] .para{margin:0;text-indent:2em;text-align:justify}
+body[data-mode="v"] .para{margin:0}
 body[data-mode="v"] .ch-head{
-  margin:0;text-align:left;line-height:var(--pitch);letter-spacing:.1em;
+  margin:0;text-align:left;line-height:var(--pitch);
   /* 锁定一栏：标题字号更大，行盒会被撑高，累积起来会让分页边界逐篇偏移 */
   width:var(--pitch);
 }
@@ -181,12 +185,11 @@ body[data-mode="v"] mark{box-shadow:none}
 /* ------------------------------------------------------------------ 页脚 */
 #pagebar{
   position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:45;
-  display:none;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;
+  display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;
   background:color-mix(in srgb,var(--panel) 88%,transparent);
   border:1px solid var(--line);box-shadow:var(--shadow);
   backdrop-filter:blur(8px);font-size:12px;color:var(--fg-dim);letter-spacing:.06em;
 }
-body[data-mode="v"] #pagebar{display:flex}
 #pagebar button{
   width:28px;height:28px;border-radius:50%;font-size:16px;line-height:1;
   color:var(--fg-soft);display:flex;align-items:center;justify-content:center;
@@ -302,14 +305,19 @@ input[type=range]::-moz-range-thumb{
   .tbtn{padding:0 8px;font-size:12px}
   #toc{width:80vw}
   .drawer{width:100%;max-width:none}
-  body[data-mode="v"] #stage{--pad-y:18px;--pad-x:14px}
-  #book{padding:2em 1.15em 40vh}
+  #stage{--pad-y:18px;--pad-x:14px}
 }
 @media (max-width:400px){
   .tbtn{padding:0 6px}
 }
 @media print{
   #topbar,#toc,.drawer,#pagebar,#bar{display:none!important}
-  body,#reader{position:static;overflow:visible}
-  #book{max-width:none;padding:0}
+  body,#reader,#stage,#viewport{position:static!important;overflow:visible!important}
+  #viewport{width:auto!important;height:auto!important;margin:0!important}
+  #book,#book.any{
+    transform:none!important;direction:ltr!important;writing-mode:horizontal-tb!important;
+    width:auto!important;height:auto!important;column-width:auto!important;column-count:auto!important;
+  }
+  .pgbreak{display:none}
+  body[data-mode="v"] .ch-head{width:auto}
 }

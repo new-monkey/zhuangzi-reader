@@ -1,14 +1,23 @@
+/* 庄子阅读器 —— 渲染 / 分页 / 手势 / 搜索 / 排版设置
+ *
+ * 两种排版共用一套「分页」模型：
+ *   #viewport 是一页的可见区域（版心），#book 在其内部按列排布；
+ *   翻页 = translateX(页号 × 页宽)，下一页永远在当前页左侧，
+ *   因此「向右拖动/滑动」= 下一页（横排竖排一致，也是传统右起书的翻法）。
+ *   - 竖排：一列 = 一行竖排文字（宽 = 行距），一页 = 若干列
+ *   - 横排：一列 = 一页（宽 = 版心宽度），篇与篇之间用 break-before:column 强制换页
+ */
 (function(){
 'use strict';
 var D = window.__BOOK__, S2T = window.__S2T__, T2S = window.__T2S__;
 var $ = function(s, r){ return (r||document).querySelector(s); };
 var $$ = function(s, r){ return Array.prototype.slice.call((r||document).querySelectorAll(s)); };
-var KEY = 'zhuangzi.reader.v2';
+var KEY = 'zhuangzi.reader.v3';
 var DEF = {theme:'paper', font:'song', fs:19, lh:195, measure:36, gap:10, mode:'h', script:'s'};
 var S = {}, pos = {ci:1, pi:0};
 
 try{
-  var raw = localStorage.getItem(KEY);
+  var raw = localStorage.getItem(KEY) || localStorage.getItem('zhuangzi.reader.v2');
   if(raw){ var o = JSON.parse(raw); S = Object.assign({}, DEF, o.s||{}); if(o.p) pos = o.p; }
 }catch(e){}
 if(!Object.keys(S).length) S = Object.assign({}, DEF);
@@ -20,10 +29,12 @@ var root = document.documentElement, body = document.body;
 var reader = $('#reader'), stage = $('#stage'), viewport = $('#viewport'), book = $('#book');
 var paraEls = [];       // [{sec,h,arr}]
 
-/* ------------------------------------------------------------ 排版应用 */
+function isV(){ return S.mode === 'v'; }
+
+/* ------------------------------------------------------------ 设置应用 */
 function apply(){
-  root.style.setProperty('--fs', S.fs+'px');
   var pitchPx = Math.max(8, Math.round(S.fs * S.lh / 100));
+  root.style.setProperty('--fs', S.fs+'px');
   root.style.setProperty('--lh', S.lh/100);
   root.style.setProperty('--pitch', pitchPx+'px');
   root.style.setProperty('--measure', S.measure);
@@ -52,7 +63,7 @@ function syncSetUI(){
 /* ------------------------------------------------------------ 正文渲染 */
 function buildBook(){
   var frag = document.createDocumentFragment();
-  D.chapters.forEach(function(ch, ci){
+  D.chapters.forEach(function(ch){
     var sec = document.createElement('section');
     sec.className = 'chapter';
     sec.id = 'c'+ch.ci;
@@ -81,13 +92,10 @@ function paraText(ch, pi){
 function renderText(){
   D.chapters.forEach(function(ch, idx){
     var refs = paraEls[idx];
-    var top = [ch.juan, ch.numCn].filter(Boolean).join(' · ');
-    refs.h.querySelector('.ch-top').textContent = top;
+    refs.h.querySelector('.ch-top').textContent = [ch.juan, ch.numCn].filter(Boolean).join(' · ');
     refs.h.querySelector('.ch-name').textContent = S.script==='s' ? ch.name : ch.nameT;
     refs.h.title = '点击回到本篇开头';
-    ch.paras.forEach(function(p, pi){
-      fillPara(refs.arr[pi], paraText(ch, pi));
-    });
+    ch.paras.forEach(function(p, pi){ fillPara(refs.arr[pi], paraText(ch, pi)); });
   });
   collectMarks();
   if(hits.length){ setHitClass(hitIdx, false); }
@@ -107,9 +115,7 @@ function fillPara(el, text){
   });
   if(cur < text.length) el.appendChild(document.createTextNode(text.slice(cur)));
 }
-function collectMarks(){
-  marks = $$('mark', book);
-}
+function collectMarks(){ marks = $$('mark', book); }
 
 /* ------------------------------------------------------------ 目录 */
 function buildTOC(){
@@ -148,57 +154,40 @@ function markTOC(ci){
     if(on){
       var sc = $('#toc-list');
       var top = el.offsetTop, h = sc.clientHeight;
-      if(top < sc.scrollTop + 40 || top > sc.scrollTop + h - 60){
-        sc.scrollTop = top - h/2;
-      }
+      if(top < sc.scrollTop + 40 || top > sc.scrollTop + h - 60) sc.scrollTop = top - h/2;
     }
   });
 }
 
-/* ------------------------------------------------------------ 位置与进度 */
-var curCI = pos.ci;
-function setTopic(ci){
-  curCI = ci;
-  var ch = D.chapters[ci-1];
-  if(!ch) return;
-  $('#topic').textContent = (S.script==='s' ? ch.name : ch.nameT) +
-    (ch.numCn ? '｜'+ch.numCn : '');
-  markTOC(ci);
-}
-function anchorEl(a){
-  var refs = paraEls[(a.ci||1)-1];
-  if(!refs) return null;
-  var arr = refs.arr;
-  return arr[Math.min(Math.max(0, a.pi||0), arr.length-1)] || refs.sec;
-}
-function progressH(){
-  var max = reader.scrollHeight - reader.clientHeight;
-  return max > 0 ? reader.scrollTop / max : 0;
-}
-function updateProgress(){
-  var pct = isV() ? (vPages <= 1 ? 1 : (vPage+1)/vPages) : progressH();
-  $('#bar i').style.width = (Math.min(1, Math.max(0, pct))*100).toFixed(2)+'%';
-}
-var posTimer = null;
-function schedulePos(){
-  // 翻页是带过渡的，等动画落定再量位置，否则量到的是上一页
-  clearTimeout(posTimer);
-  posTimer = setTimeout(function(){
-    if(isV()){ var a = captureAnchorV(); if(a) pos = a; }
-    save();
-  }, 360);
-}
+/* ------------------------------------------------------------ 分页几何 */
+var P = {
+  page: 0, pages: 1,           // 当前页 / 总页数
+  pageW: 100, pageH: 100,      // 一页的宽高（px）
+  pitch: 20,                   // 行距（px）
+  perPage: 1,                  // 竖排：一页多少栏
+  shift: 0,                    // 当前位移（px）
+  right: 0,                    // 版心右边界（未位移坐标系）
+  chapterStart: []             // 每篇起始页（浮点）
+};
+var breakEls = [];             // 竖排的换页空白块
 
-/* ------------------------------------------------------------ 竖排分页 */
-var vPage = 0, vPages = 1, vPageW = 100, vPitch = 20, vRight = 0, vShift = 0, vChapterStart = [];
-function isV(){ return S.mode === 'v'; }
+function clearBreaks(){
+  breakEls.forEach(function(el){ if(el.parentNode) el.parentNode.removeChild(el); });
+  breakEls = [];
+}
+function addBreak(beforeSec, widthPx){
+  var el = document.createElement('div');
+  el.className = 'pgbreak';
+  el.setAttribute('aria-hidden', 'true');
+  el.style.width = widthPx + 'px';
+  beforeSec.parentNode.insertBefore(el, beforeSec);
+  breakEls.push(el);
+}
 
 // 浏览器按 1/64px 存行距，栏距必须落在同一个格子上，否则误差会随栏数累积
-function quantizePitch(px){
-  return Math.floor(px * 64) / 64;
-}
+function quantize(px){ return Math.floor(px * 64) / 64; }
 
-// 竖排下用「一栏一行」的客户矩形实测栏距：比读 line-height 更准，不受取整影响
+// 竖排下用「一栏一行」的客户端矩形实测栏距：比读 line-height 更准
 var pitchProbe = null;
 function measurePitch(){
   if(!pitchProbe){
@@ -226,30 +215,34 @@ function measurePitch(){
   return diffs[Math.floor(diffs.length / 2)];
 }
 
-function vLayout(){
-  if(!isV()){
-    book.style.transition = 'none';
-    book.style.transform = 'none';
-    book.style.lineHeight = '';
-    book.style.removeProperty('--pitch');
-    viewport.style.width = '';
-    viewport.style.right = '';
-    viewport.style.left = '';
-    vShift = 0;
-    return;
+function startRect(ci){
+  var refs = paraEls[ci-1];
+  if(!refs) return book.getBoundingClientRect();
+  if(isV()){
+    return (refs.h.querySelector('.ch-top') || refs.h.querySelector('.ch-name') || refs.h).getBoundingClientRect();
   }
+  return refs.sec.getBoundingClientRect();
+}
+
+function layout(){
+  clearBreaks();
   book.style.transition = 'none';
   book.style.transform = 'translateX(0px)';
-  vShift = 0;
-  // 清掉上一次的微调，回到样式表里的行距
   book.style.lineHeight = '';
+  book.style.columnWidth = '';
   book.style.removeProperty('--pitch');
   viewport.style.width = '';
-  viewport.style.right = '';
   viewport.style.left = '';
+  viewport.style.right = '';
+  P.shift = 0;
   void book.offsetWidth;
 
-  // 版心可用宽度 = stage 宽度 - 左右留白（留白由 CSS 变量 --pad-x 定义）
+  if(isV()) layoutV(); else layoutH();
+  measurePages();
+}
+
+/* 竖排：一列 = 一行字，一页 = perPage 列；篇首用空白块推到页边界 */
+function layoutV(){
   var scs = getComputedStyle(stage);
   var padX = parseFloat(scs.getPropertyValue('--pad-x')) || 22;
   var avail = Math.max(40, stage.clientWidth - padX * 2);
@@ -258,11 +251,10 @@ function vLayout(){
   if(!isFinite(basePitch) || basePitch <= 0) basePitch = S.fs * S.lh / 100;
   var per = Math.max(1, Math.floor(avail / basePitch));
 
-  // 让页宽正好等于「整数栏 × 栏距」：把剩余像素摊进行距（量化到 1/64px），
-  // 再实测一次栏距；若仍超出可用宽度就减一栏重试。
+  // 页宽 = 整数栏 × 栏距：把剩余像素摊进行距（量化到 1/64px），再实测一次栏距
   var pitch = basePitch, pageW = per * pitch;
   for(var attempt = 0; attempt < 4; attempt++){
-    var target = quantizePitch(avail / per - 0.02);
+    var target = quantize(avail / per - 0.02);
     book.style.lineHeight = target + 'px';
     book.style.setProperty('--pitch', target + 'px');
     void book.offsetWidth;
@@ -271,89 +263,161 @@ function vLayout(){
     if(pageW <= avail + 0.02 || per <= 1) break;
     per -= 1;
   }
-  vPitch = pitch;
-  vPageW = pageW;
-  // 裁切边界就是页边界：多余的几像素留作留白，页边不会露出相邻页的半栏字
+  P.pitch = pitch;
+  P.perPage = per;
+  P.pageW = pageW;
+  P.pageH = stage.clientHeight;
   viewport.style.left = 'auto';
   viewport.style.right = (padX + Math.max(0, avail - pageW) / 2) + 'px';
   viewport.style.width = pageW + 'px';
-  vRight = viewport.getBoundingClientRect().right;
+  P.right = viewport.getBoundingClientRect().right;
 
-  var minLeft = vRight;
-  vChapterStart = [];
-  // 竖排下 section / h2 作为块级元素会撑满“块轴宽度”，不能用来量内容范围；
-  // 改用内联元素（首行标题 span、末段文字）的真实边缘来推算。
-  var secs = book.children;
-  for(var i=0;i<secs.length;i++){
-    var ref = secs[i].querySelector('.ch-top, .ch-name') || secs[i];
-    var r = ref.getBoundingClientRect();
-    var start = (vRight - r.right) / vPageW;
-    vChapterStart.push(Math.max(0, Math.round(start * 1000) / 1000));
+  // 篇首对齐页边界：先量（不含空白块），再插空白块
+  var shift = 0, plan = [];
+  for(var i = 1; i < D.chapters.length; i++){
+    var pos = (P.right - startRect(D.chapters[i].ci).right) / P.pageW + shift;
+    var extra = Math.ceil(pos - 0.02) - pos;
+    if(extra < 0.001 || extra > 0.999) extra = 0;
+    if(extra > 0){
+      plan.push({i: i, width: Math.round(extra * P.pageW * 64) / 64});
+      shift += extra;
+    }
   }
-  var lastSec = book.lastElementChild;
-  var lastPara = lastSec ? lastSec.lastElementChild : null;
-  if(lastPara){
-    var lr = lastPara.getBoundingClientRect();
-    if(lr.width > 0 || lr.height > 0) minLeft = lr.left;
+  plan.forEach(function(p){ addBreak(paraEls[p.i].sec, p.width); });
+  if(plan.length) void book.offsetWidth;
+}
+
+/* 横排：一篇 = 一页（break-before:column），列宽 = 版心宽度 */
+function layoutH(){
+  var scs = getComputedStyle(stage);
+  var padX = parseFloat(scs.getPropertyValue('--pad-x')) || 22;
+  var avail = Math.max(40, stage.clientWidth - padX * 2);
+  var fs = parseFloat(getComputedStyle(book).fontSize) || S.fs;
+  var want = Math.round(S.measure * fs);
+  var pageW = Math.max(fs * 8, Math.min(avail, want));
+  viewport.style.width = pageW + 'px';
+  book.style.columnWidth = pageW + 'px';
+  void book.offsetWidth;
+  P.pageW = pageW;
+  P.pitch = parseFloat(getComputedStyle(book).lineHeight) || (S.fs * S.lh / 100);
+  P.perPage = 1;
+  P.right = viewport.getBoundingClientRect().right;
+  P.pageH = viewport.getBoundingClientRect().height;
+}
+
+function measurePages(){
+  P.chapterStart = D.chapters.map(function(ch){
+    return (P.right - startRect(ch.ci).right) / P.pageW;
+  });
+  var maxPage = 0;
+  for(var i = 0; i < paraEls.length; i++){
+    var arr = paraEls[i].arr;
+    for(var j = 0; j < arr.length; j++){
+      var r = arr[j].getBoundingClientRect();
+      if(!r.width && !r.height) continue;
+      var p = Math.floor((P.right - r.left) / P.pageW + 0.02);
+      if(p > maxPage) maxPage = p;
+    }
   }
-  var contentW = Math.max(0, vRight - minLeft);
-  vPages = Math.max(1, Math.ceil(contentW / vPageW - 0.002));
+  P.pages = Math.max(1, maxPage + 1);
 }
 function pageOfEl(el){
   if(!el) return 0;
-  var r = el.getBoundingClientRect();     // 含当前 translateX，先还原成未位移的坐标
-  var x = vRight - (r.right - vShift);
-  return Math.min(vPages-1, Math.max(0, Math.floor(x / vPageW + 0.02)));
+  var r = el.getBoundingClientRect();          // 含当前位移，先还原成未位移坐标
+  var x = P.right - (r.right - P.shift);
+  return Math.min(P.pages-1, Math.max(0, Math.floor(x / P.pageW + 0.02)));
 }
-function setPage(p, animate){
-  if(!isV()) return;
-  vPage = Math.min(Math.max(0, p|0), vPages-1);
-  if(animate === false){
-    book.style.transition = 'none';
-  } else {
-    book.style.transition = 'transform .28s var(--ease)';
-  }
-  vShift = vPage * vPageW;
-  book.style.transform = 'translateX(' + vShift + 'px)';
-  if(animate === false) void book.offsetWidth;
-  updatePageBar();
-  updateProgress();
-  var ci = chapterAtPage(vPage);
-  if(ci !== curCI) setTopic(ci);
-  schedulePos();
+function chapterPage(ci){
+  var f = P.chapterStart[(ci||1)-1] || 0;
+  return Math.min(P.pages-1, Math.max(0, Math.floor(f + 0.02)));
 }
 function chapterAtPage(pg){
   var idx = 0;
-  for(var i=0;i<vChapterStart.length;i++){
-    if(vChapterStart[i] <= pg + 0.001) idx = i; else break;
+  for(var i = 0; i < P.chapterStart.length; i++){
+    if(P.chapterStart[i] <= pg + 0.02) idx = i; else break;
   }
   return D.chapters[idx] ? D.chapters[idx].ci : 1;
 }
-function updatePageBar(){
-  $('#pg-label').textContent = '第 ' + (vPage+1) + ' / ' + vPages + ' 页';
-  $('#pg-prev').disabled = vPage <= 0;
-  $('#pg-next').disabled = vPage >= vPages-1;
-}
-function nextPage(){ if(isV() && vPage < vPages-1) setPage(vPage+1, true); else if(isV()) flashEnd(); }
-function prevPage(){ if(isV() && vPage > 0) setPage(vPage-1, true); }
-function flashEnd(){}
 
-/* ------------------------------------------------------------ 定位跳转 */
-function scrollToElH(el){
-  if(!el) return;
-  var top = el.getBoundingClientRect().top - reader.getBoundingClientRect().top + reader.scrollTop - 18;
-  reader.scrollTop = Math.max(0, top);
+/* ------------------------------------------------------------ 翻页 */
+function applyShift(px){
+  P.shift = px;
+  book.style.transition = 'none';
+  book.style.transform = 'translateX(' + px + 'px)';
 }
+function setPage(p, animate){
+  P.page = Math.min(Math.max(0, p|0), P.pages-1);
+  P.shift = P.page * P.pageW;
+  if(animate === false){
+    book.style.transition = 'none';
+  } else {
+    book.style.transition = 'transform .3s cubic-bezier(.22,.61,.36,1)';
+  }
+  book.style.transform = 'translateX(' + P.shift + 'px)';
+  if(animate === false) void book.offsetWidth;
+  updatePageBar();
+  updateProgress();
+  var ci = chapterAtPage(P.page);
+  if(ci !== curCI) setTopic(ci);
+  schedulePos();
+}
+function nextPage(){ if(P.page < P.pages-1) setPage(P.page+1, true); }
+function prevPage(){ if(P.page > 0) setPage(P.page-1, true); }
+function updatePageBar(){
+  $('#pg-label').textContent = '第 ' + (P.page+1) + ' / ' + P.pages + ' 页';
+  $('#pg-prev').disabled = P.page <= 0;
+  $('#pg-next').disabled = P.page >= P.pages-1;
+}
+function updateProgress(){
+  var pct = P.pages <= 1 ? 1 : (P.page+1)/P.pages;
+  $('#bar i').style.width = (Math.min(1, Math.max(0, pct))*100).toFixed(2)+'%';
+}
+
+/* ------------------------------------------------------------ 位置与进度 */
+var curCI = pos.ci;
+function setTopic(ci){
+  curCI = ci;
+  var ch = D.chapters[ci-1];
+  if(!ch) return;
+  $('#topic').textContent = (S.script==='s' ? ch.name : ch.nameT) + (ch.numCn ? '｜'+ch.numCn : '');
+  markTOC(ci);
+}
+function anchorEl(a){
+  var refs = paraEls[(a.ci||1)-1];
+  if(!refs) return null;
+  var arr = refs.arr;
+  return arr[Math.min(Math.max(0, a.pi||0), arr.length-1)] || refs.sec;
+}
+var posTimer = null;
+function schedulePos(){
+  // 翻页带过渡，等动画落定再量位置，否则量到的是上一页
+  clearTimeout(posTimer);
+  posTimer = setTimeout(function(){
+    var a = captureAnchor();
+    if(a) pos = a;
+    save();
+  }, 360);
+}
+function captureAnchor(){
+  // 当前页里「起点落在本页、且最靠右」的段落 = 阅读位置
+  var vr = viewport.getBoundingClientRect();
+  var best = null, bestX = -Infinity;
+  for(var i = 0; i < paraEls.length; i++){
+    var arr = paraEls[i].arr;
+    for(var j = 0; j < arr.length; j++){
+      var r = arr[j].getBoundingClientRect();
+      if((!r.width && !r.height) || r.right > vr.right + 1 || r.right < vr.left) continue;
+      if(r.right > bestX){ bestX = r.right; best = {ci: D.chapters[i].ci, pi: j}; }
+    }
+  }
+  return best;
+}
+
 function goChapter(ci){
   var refs = paraEls[ci-1];
   if(!refs) return;
   flashEl(refs.h);
-  if(isV()){
-    setPage(pageOfEl(refs.sec), true);
-  } else {
-    reader.scrollTop = refs.sec.getBoundingClientRect().top - reader.getBoundingClientRect().top + reader.scrollTop - 4;
-    afterScrollH();
-  }
+  setPage(chapterPage(ci), true);
   setTopic(ci);
   pos = {ci: ci, pi: 0};
   schedulePos();
@@ -363,76 +427,13 @@ function goAdjacentChapter(dir){
   var t = Math.min(D.chapters.length-1, Math.max(0, i+dir));
   if(t !== i) goChapter(D.chapters[t].ci);
 }
-function captureAnchorV(){
-  // 竖排翻页后：找「起点落在当前页、且最靠右」的段落，作为恢复位置
-  var vr = viewport.getBoundingClientRect();
-  var best = null, bestX = -Infinity;
-  for(var i=0;i<paraEls.length;i++){
-    var arr = paraEls[i].arr;
-    for(var j=0;j<arr.length;j++){
-      var r = arr[j].getBoundingClientRect();
-      if((!r.width && !r.height) || r.right > vr.right + 1 || r.right < vr.left) continue;
-      if(r.right > bestX){ bestX = r.right; best = {ci: D.chapters[i].ci, pi: j}; }
-    }
-  }
-  return best;
-}
-function captureAnchor(){
-  if(isV()){
-    var a = captureAnchorV();
-    if(a) return a;
-    return {ci: chapterAtPage(vPage), pi: 0};
-  }
-  var rt = reader.getBoundingClientRect().top + 14;
-  var best = null;
-  var refs = paraEls[(curCI||1)-1];
-  if(refs){
-    for(var i=0;i<refs.arr.length;i++){
-      var r = refs.arr[i].getBoundingClientRect();
-      if(r.bottom > rt){ best = i; break; }
-    }
-  }
-  return {ci: curCI, pi: best == null ? 0 : best};
-}
-function afterScrollH(){
-  if(isV()) return;
-  var rt = reader.getBoundingClientRect().top + 14;
-  var ci = 1, pi = 0;
-  for(var i=0;i<paraEls.length;i++){
-    var r = paraEls[i].sec.getBoundingClientRect();
-    if(r.bottom > rt) { ci = D.chapters[i].ci; break; }
-  }
-  var refs = paraEls[ci-1];
-  if(refs){
-    for(var j=0;j<refs.arr.length;j++){
-      if(refs.arr[j].getBoundingClientRect().bottom > rt){ pi = j; break; }
-    }
-  }
-  if(ci !== curCI) setTopic(ci);
-  pos = {ci: ci, pi: pi};
-  updateProgress();
-  schedulePos();
-}
-function reflow(anchor, opts){
+function reflow(anchor){
   anchor = anchor || pos;
-  if(isV()){
-    vLayout();
-    var el = anchorEl(anchor);
-    setPage(el ? pageOfEl(el) : 0, false);
-    updatePageBar(); updateProgress();
-  } else {
-    book.style.transition = 'none';
-    book.style.transform = 'none';
-    book.style.lineHeight = '';
-    book.style.removeProperty('--pitch');
-    viewport.style.width = '';
-    viewport.style.right = '';
-    viewport.style.left = '';
-    var refs = paraEls[(anchor.ci||1)-1];
-    var el = (!anchor.pi && refs) ? refs.sec : anchorEl(anchor);
-    scrollToElH(el);
-    afterScrollH();
-  }
+  layout();
+  var el = anchorEl(anchor);
+  setPage(el ? pageOfEl(el) : 0, false);
+  updatePageBar();
+  updateProgress();
 }
 
 /* ------------------------------------------------------------ 搜索 */
@@ -442,7 +443,7 @@ var MAX_HITS = 3000;
 function normQuery(q){
   var map = S.script === 's' ? T2S : S2T;
   var out = '';
-  for(var i=0;i<q.length;i++){
+  for(var i = 0; i < q.length; i++){
     var c = q[i];
     out += (map && map[c]) || c;
   }
@@ -453,9 +454,9 @@ function doSearch(q, jump){
   hits = []; hitIdx = -1; HITMAP = new Map();
   var nq = normQuery(q).toLowerCase();
   if(nq){
-    for(var ci=0; ci<D.chapters.length; ci++){
+    for(var ci = 0; ci < D.chapters.length; ci++){
       var ch = D.chapters[ci];
-      for(var pi=0; pi<ch.paras.length; pi++){
+      for(var pi = 0; pi < ch.paras.length; pi++){
         var text = paraText(ch, pi).toLowerCase();
         var at = text.indexOf(nq);
         while(at >= 0 && hits.length < MAX_HITS){
@@ -475,7 +476,7 @@ function doSearch(q, jump){
   renderText();
   renderResults();
   if(hits.length) setHitClass(-1, false);
-  if(hits.length && jump !== false) gotoHit(0, true);
+  if(hits.length && jump !== false) gotoHit(0);
   updateSearchMeta();
 }
 function setHitClass(i, scroll){
@@ -483,7 +484,7 @@ function setHitClass(i, scroll){
   hitIdx = i;
   if(i < 0 || i >= hits.length){ updateSearchMeta(); return; }
   var target = null;
-  for(var k=0;k<marks.length;k++){
+  for(var k = 0; k < marks.length; k++){
     if(marks[k].dataset.i === String(i)){ target = marks[k]; break; }
   }
   if(target){
@@ -500,27 +501,13 @@ function setHitClass(i, scroll){
   updateSearchMeta();
 }
 function revealMark(mark){
-  var el = mark.parentElement;
-  if(isV()){
-    setPage(pageOfEl(mark), true);
-    flashEl(el);
-  } else {
-    var rt = reader.getBoundingClientRect().top;
-    var r = mark.getBoundingClientRect();
-    var want = r.top - rt;
-    if(want < 60 || want > reader.clientHeight - 120){
-      reader.scrollTop += want - reader.clientHeight * 0.38;
-    }
-    flashEl(el);
-  }
+  setPage(pageOfEl(mark), true);
+  flashEl(mark.parentElement);
 }
-function gotoHit(i, noScroll){
+function gotoHit(i){
   if(!hits.length) return;
   i = Math.min(Math.max(0, i), hits.length-1);
-  var h = hits[i];
-  if(h.ci !== curCI) setTopic(h.ci);
   setHitClass(i, true);
-  if(noScroll){ /* still scroll */ }
 }
 function updateSearchMeta(){
   var n = hits.length;
@@ -574,7 +561,7 @@ function esc(s){
   });
 }
 
-/* ------------------------------------------------------------ 面板控制 */
+/* ------------------------------------------------------------ 面板 */
 function panelOpen(){
   return body.classList.contains('toc-open') || body.classList.contains('search-open') || body.classList.contains('set-open');
 }
@@ -605,7 +592,60 @@ function openSearch(){
   setTimeout(function(){ var q = $('#q'); q.focus(); q.select(); }, 120);
 }
 
-/* ------------------------------------------------------------ 设置绑定 */
+/* ------------------------------------------------------------ 手势 */
+var drag = null;
+function dragTarget(dx){
+  // 向右拖动 = 下一页（下一页在左侧）
+  if(dx > 0) return P.page + 1;
+  return P.page - 1;
+}
+function onPointerDown(e){
+  if(panelOpen()) return;
+  if(e.pointerType === 'mouse' && e.button !== 0) return;
+  var sel = window.getSelection();
+  if(sel && !sel.isCollapsed) return;
+  drag = {x0: e.clientX, y0: e.clientY, base: P.shift, moved: false, id: e.pointerId};
+}
+function onPointerMove(e){
+  if(!drag || e.pointerId !== drag.id) return;
+  var dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  if(!drag.moved){
+    if(Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    if(Math.abs(dy) > Math.abs(dx)){ drag = null; return; }   // 纵向手势不算翻页
+    drag.moved = true;
+    body.classList.add('dragging');
+    var sel = window.getSelection();
+    if(sel && !sel.isCollapsed) sel.removeAllRanges();
+    try{ stage.setPointerCapture(e.pointerId); }catch(err){}
+  }
+  var min = -(P.pageW * 0.35);
+  var max = (P.pages-1) * P.pageW + P.pageW * 0.35;
+  var s = Math.max(min, Math.min(max, drag.base + dx));
+  applyShift(s);
+  e.preventDefault();
+}
+function onPointerUp(e){
+  if(!drag || (e.pointerId !== drag.id && e.type !== 'pointercancel')) return;
+  var d = drag;
+  drag = null;
+  body.classList.remove('dragging');
+  try{ stage.releasePointerCapture(e.pointerId); }catch(err){}
+  if(!d.moved){
+    // 轻点：左右两侧翻页
+    var r = stage.getBoundingClientRect();
+    var x = e.clientX - r.left;
+    if(x < r.width * 0.32) nextPage();
+    else if(x > r.width * 0.68) prevPage();
+    else setPage(P.page, true);
+    return;
+  }
+  var dx = e.clientX - d.x0;
+  var threshold = Math.min(90, P.pageW * 0.18);
+  var target = Math.abs(dx) > threshold ? dragTarget(dx) : P.page;
+  setPage(target, true);
+}
+
+/* ------------------------------------------------------------ 绑定 */
 function bind(){
   $('#btn-toc').addEventListener('click', function(){
     if(body.classList.contains('toc-open')) closePanels(); else openPanel('toc-open');
@@ -639,26 +679,24 @@ function bind(){
     }
   });
 
-  // 主题色块
+  // 主题
   var themes = [['paper','纸白'],['sepia','米黄'],['green','青瓷'],['ink','纯白'],['night','夜色']];
+  var bgMap = {paper:'#faf7ef', sepia:'#f0e6d1', green:'#edf3ea', ink:'#fff', night:'#14171d'};
+  var fgMap = {paper:'#2b2823', sepia:'#392f20', green:'#232e26', ink:'#161616', night:'#c9c4ba'};
   var swWrap = $('#theme-swatches');
   themes.forEach(function(t){
     var b = document.createElement('button');
     b.className = 'sw';
     b.dataset.v = t[0];
     b.title = t[1];
-    var bgMap = {paper:'#faf7ef', sepia:'#f0e6d1', green:'#edf3ea', ink:'#fff', night:'#14171d'};
-    var fgMap = {paper:'#2b2823', sepia:'#392f20', green:'#232e26', ink:'#161616', night:'#c9c4ba'};
     b.style.background = bgMap[t[0]];
     b.style.color = fgMap[t[0]];
     b.innerHTML = '<span>文</span>';
-    b.addEventListener('click', function(){
-      S.theme = t[0]; apply(); save();
-    });
+    b.addEventListener('click', function(){ S.theme = t[0]; apply(); save(); });
     swWrap.appendChild(b);
   });
   $$('#seg-font button').forEach(function(b){
-    b.addEventListener('click', function(){ S.font = b.dataset.v; apply(); save(); });
+    b.addEventListener('click', function(){ S.font = b.dataset.v; apply(); save(); onChangeLayoutSettings(); });
   });
   $('#set-fs').addEventListener('input', function(e){ S.fs = +e.target.value; onChangeLayoutSettings(); });
   $('#set-lh').addEventListener('input', function(e){ S.lh = +e.target.value; onChangeLayoutSettings(); });
@@ -671,61 +709,36 @@ function bind(){
     b.addEventListener('click', function(){ setScript(b.dataset.v); });
   });
   $('#set-reset').addEventListener('click', function(){
-    S = Object.assign({}, DEF); apply(); save();
-    reflow(pos);
+    S = Object.assign({}, DEF); apply(); save(); reflow(pos);
   });
 
-  // 翻页
   $('#pg-prev').addEventListener('click', prevPage);
   $('#pg-next').addEventListener('click', nextPage);
 
-  // 竖排翻页：点击左右 / 滚轮 / 触屏
-  stage.addEventListener('click', function(e){
-    if(!isV() || panelOpen()) return;
-    var sel = window.getSelection();
-    if(sel && !sel.isCollapsed) return;
-    var r = stage.getBoundingClientRect();
-    var x = e.clientX - r.left;
-    if(x > r.width * 0.7) prevPage();
-    else if(x < r.width * 0.3) nextPage();
-  });
+  // 拖拽 / 轻点翻页
+  stage.addEventListener('pointerdown', onPointerDown);
+  stage.addEventListener('pointermove', onPointerMove);
+  stage.addEventListener('pointerup', onPointerUp);
+  stage.addEventListener('pointercancel', onPointerUp);
+
+  // 滚轮：向下 / 向右 = 下一页
   var wheelLock = false;
   reader.addEventListener('wheel', function(e){
-    if(!isV() || panelOpen()) return;
+    if(panelOpen()) return;
     e.preventDefault();
-    var d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : -e.deltaX;
+    var d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
     if(Math.abs(d) < 3 || wheelLock) return;
     wheelLock = true;
-    setTimeout(function(){ wheelLock = false; }, 200);
+    setTimeout(function(){ wheelLock = false; }, 180);
     if(d > 0) nextPage(); else prevPage();
   }, {passive:false});
-  var tx = 0, ty = 0;
-  stage.addEventListener('touchstart', function(e){
-    if(!isV() || panelOpen() || e.touches.length !== 1) return;
-    tx = e.touches[0].clientX; ty = e.touches[0].clientY;
-  }, {passive:true});
-  stage.addEventListener('touchend', function(e){
-    if(!isV() || panelOpen()) return;
-    var t = e.changedTouches[0];
-    var dx = t.clientX - tx, dy = t.clientY - ty;
-    if(Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)){ if(dx > 0) prevPage(); else nextPage(); }
-  }, {passive:true});
 
-  // 章节标题点击回本篇
+  // 点篇名回到本篇开头
   book.addEventListener('click', function(e){
     var h = e.target.closest && e.target.closest('.ch-head');
     if(h) goChapter(+h.parentElement.dataset.ci);
   });
 
-  // 滚动（横排）
-  var raf = false;
-  reader.addEventListener('scroll', function(){
-    if(isV() || raf) return;
-    raf = true;
-    requestAnimationFrame(function(){ raf = false; afterScrollH(); });
-  }, {passive:true});
-
-  // 键盘
   document.addEventListener('keydown', function(e){
     var tag = (e.target.tagName||'').toLowerCase();
     var typing = tag === 'input' || tag === 'textarea' || tag === 'select';
@@ -742,59 +755,43 @@ function bind(){
     }
     if(k === 'v' || k === 'V'){ setMode(S.mode==='v'?'h':'v'); return; }
     if(k === 't' || k === 'T'){ setScript(S.script==='s'?'t':'s'); return; }
-    if(isV()){
-      if(k === 'ArrowLeft' || k === 'ArrowDown' || k === 'PageDown' || k === ' '){ e.preventDefault(); nextPage(); }
-      else if(k === 'ArrowRight' || k === 'ArrowUp' || k === 'PageUp'){ e.preventDefault(); prevPage(); }
-      else if(k === 'Home'){ e.preventDefault(); setPage(0, true); }
-      else if(k === 'End'){ e.preventDefault(); setPage(vPages-1, true); }
-      else if(k === 'j'){ goAdjacentChapter(1); }
-      else if(k === 'k'){ goAdjacentChapter(-1); }
-    } else {
-      if(k === 'ArrowLeft' || k === 'k'){ e.preventDefault(); goAdjacentChapter(-1); }
-      else if(k === 'ArrowRight' || k === 'j'){ e.preventDefault(); goAdjacentChapter(1); }
-      else if(k === 'Home'){ reader.scrollTop = 0; }
-      else if(k === 'End'){ reader.scrollTop = reader.scrollHeight; }
-    }
+    if(k === 'j'){ goAdjacentChapter(1); return; }
+    if(k === 'k'){ goAdjacentChapter(-1); return; }
+    if(k === 'ArrowLeft' || k === 'ArrowDown' || k === 'PageDown' || k === ' '){ e.preventDefault(); nextPage(); }
+    else if(k === 'ArrowRight' || k === 'ArrowUp' || k === 'PageUp'){ e.preventDefault(); prevPage(); }
+    else if(k === 'Home'){ e.preventDefault(); setPage(0, true); }
+    else if(k === 'End'){ e.preventDefault(); setPage(P.pages-1, true); }
   });
 
-  // 窗口尺寸变化
   var rt = null;
   window.addEventListener('resize', function(){
     clearTimeout(rt);
-    rt = setTimeout(function(){
-      var a = captureAnchor();
-      reflow(a);
-    }, 180);
+    rt = setTimeout(function(){ reflow(captureAnchor() || pos); }, 180);
   });
   window.addEventListener('orientationchange', function(){
-    setTimeout(function(){ reflow(captureAnchor()); }, 300);
+    setTimeout(function(){ reflow(captureAnchor() || pos); }, 300);
   });
 }
 
 function onChangeLayoutSettings(){
   apply();
   save();
-  var a = captureAnchor();
-  reflow(a);
+  reflow(captureAnchor() || pos);
   renderResults();
 }
 function setMode(m){
   if(m === S.mode) return;
-  var a = captureAnchor();
+  var a = captureAnchor() || pos;
   S.mode = m;
   apply();
   save();
-  // 等一帧让 CSS 生效，再测量
   requestAnimationFrame(function(){
-    requestAnimationFrame(function(){
-      reflow(a);
-      updateProgress();
-    });
+    requestAnimationFrame(function(){ reflow(a); });
   });
 }
 function setScript(sc){
   if(sc === S.script) return;
-  var a = captureAnchor();
+  var a = captureAnchor() || pos;
   S.script = sc;
   apply();
   save();
@@ -803,7 +800,6 @@ function setScript(sc){
   requestAnimationFrame(function(){
     reflow(a);
     setTopic(curCI);
-    updateProgress();
   });
 }
 
@@ -815,12 +811,10 @@ function boot(){
   renderText();
   bind();
 
-  // 支持 URL 参数调试/直达：?ci=17&mode=v&script=t&q=鲲
+  // 深链参数：?ci=17&mode=v&script=t&q=鲲&page=12&theme=night&fs=22
   var params = new URLSearchParams(location.search);
-  if(params.get('mode') === 'v') S.mode = 'v';
-  if(params.get('mode') === 'h') S.mode = 'h';
-  if(params.get('script') === 't') S.script = 't';
-  if(params.get('script') === 's') S.script = 's';
+  if(params.get('mode') === 'v' || params.get('mode') === 'h') S.mode = params.get('mode');
+  if(params.get('script') === 't' || params.get('script') === 's') S.script = params.get('script');
   if(params.get('theme')) S.theme = params.get('theme');
   if(params.get('fs')) S.fs = Math.min(36, Math.max(14, +params.get('fs') || S.fs));
   if(params.get('ci')) pos = {ci: +params.get('ci') || 1, pi: 0};
@@ -840,8 +834,7 @@ function boot(){
       }
       if(document.fonts && document.fonts.ready){
         document.fonts.ready.then(function(){
-          var a = captureAnchor();
-          reflow(a);
+          reflow(captureAnchor() || pos);
           if(params.get('page')) setPage(Math.max(0, (+params.get('page')||1) - 1), false);
         });
       }

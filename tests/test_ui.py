@@ -142,36 +142,38 @@ class ReaderTest(unittest.TestCase):
         self.page.wait_for_timeout(400)
         self.assertEqual(self._page_no()[0], 1)
 
-    def test_vertical_columns_no_drift(self) -> None:
-        """回归：栏位与页边界必须恒定对齐。
+    def test_page_grid_alignment(self) -> None:
+        """回归：页宽是栏距的整数倍；每篇都从新的一页开始（篇首落在页边界）。
 
-        曾经的问题：篇题字号更大，把行盒撑高半像素，累积 33 篇后整页偏移小半栏，
-        页边会露出相邻页的半栏字。这里检查两个不变量：
-        页宽是栏距的整数倍；各篇首所在列的相位不随篇目漂移。
+        曾经的问题：篇题字号更大把行盒撑高，累积 33 篇后整页偏移小半栏，
+        页边会露出相邻页的半栏字。现在用「篇首块的右边缘是否落在页边界」
+        来判定 —— 用 section 的矩形，不受字形宽度影响。
         """
-        self._vertical()
-        geo = self.page.evaluate(
-            """() => {
-                 const vp = document.getElementById('viewport').getBoundingClientRect();
-                 const book = document.getElementById('book');
-                 const pitch = parseFloat(getComputedStyle(book).lineHeight);
-                 const tx = new DOMMatrix(getComputedStyle(book).transform).m41;
-                 const range = document.createRange();
-                 const fracs = [];
-                 for (const el of document.querySelectorAll('.ch-name')) {
-                   if (!el.firstChild || el.firstChild.nodeType !== 3) continue;
-                   range.setStart(el.firstChild, 0);
-                   range.setEnd(el.firstChild, 1);
-                   const k = (vp.right - (range.getBoundingClientRect().left - tx)) / pitch;
-                   fracs.push(k - Math.round(k));
-                 }
-                 return {width: vp.width, pitch, fracs};
-               }"""
-        )
-        per = geo["width"] / geo["pitch"]
-        self.assertAlmostEqual(per, round(per), delta=1e-3, msg="页宽不是栏距的整数倍")
-        spread = max(geo["fracs"]) - min(geo["fracs"])
-        self.assertLess(spread, 0.02, f"栏位相对页边界漂移 {spread:.3f} 栏")
+        for mode in ("v", "h"):
+            if mode != "v":
+                self.page.click("#btn-mode")
+                self.page.wait_for_timeout(600)
+            geo = self.page.evaluate(
+                """() => {
+                     const vp = document.getElementById('viewport').getBoundingClientRect();
+                     const book = document.getElementById('book');
+                     const pitch = parseFloat(getComputedStyle(book).lineHeight);
+                     const tx = new DOMMatrix(getComputedStyle(book).transform).m41;
+                     const phases = [];
+                     for (const sec of document.querySelectorAll('.chapter')) {
+                       const r = sec.getBoundingClientRect();
+                       if (!r.width) continue;
+                       phases.push((vp.right - (r.right - tx)) / vp.width);
+                     }
+                     return {width: vp.width, pitch, phases, mode: document.body.dataset.mode};
+                   }"""
+            )
+            frac = [abs(p - round(p)) for p in geo["phases"]]
+            self.assertTrue(frac, "没有量到章节位置")
+            self.assertLess(max(frac), 0.02, f"篇首没有落在页边界上（{max(frac):.3f} 页）")
+            if geo["mode"] == "v":
+                per = geo["width"] / geo["pitch"]
+                self.assertAlmostEqual(per, round(per), delta=1e-3, msg="页宽不是栏距的整数倍")
 
     def test_toc_jump_in_vertical(self) -> None:
         """回归：竖排下点目录要跳到该篇所在页，而不是按当前位移算错页。"""
