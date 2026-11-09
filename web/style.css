@@ -152,7 +152,7 @@ mark.cur{background:var(--mark-cur);box-shadow:0 0 0 1px color-mix(in srgb,var(-
 
 /* ------------------------------------------------- 横排（分页，列自右向左） */
 body[data-mode="h"] #viewport{
-  top:var(--pad-y);bottom:var(--pad-y);left:0;right:0;margin:0 auto;
+  top:var(--pad-y);bottom:calc(var(--pad-y) + 28px);left:0;right:0;margin:0 auto;
 }
 body[data-mode="h"] #book{
   direction:rtl;               /* 列从右往左排：与竖排同一套翻页方向 */
@@ -170,7 +170,7 @@ body[data-mode="h"] .ch-head::after{
 }
 
 /* ------------------------------------------------- 竖排（右起，分页） */
-body[data-mode="v"] #viewport{top:var(--pad-y);bottom:var(--pad-y)}
+body[data-mode="v"] #viewport{top:var(--pad-y);bottom:calc(var(--pad-y) + 28px)}
 body[data-mode="v"] #book{
   writing-mode:vertical-rl;text-orientation:mixed;
   width:100%;height:100%;
@@ -308,6 +308,9 @@ body.immersive #topbar{transform:translateY(-100%);opacity:0;pointer-events:none
 body.immersive #pagebar{display:none}
 body.immersive #reader{top:0}
 body.immersive #stage{--pad-y:14px}
+/* 沉浸模式下浮层隐藏，正文占满 */
+body.immersive[data-mode="h"] #viewport,
+body.immersive[data-mode="v"] #viewport{bottom:var(--pad-y)}
 #immersive-hint{
   position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:70;
   padding:16px 28px;border-radius:12px;
