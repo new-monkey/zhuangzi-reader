@@ -40,5 +40,9 @@ jobs:
         run: |
           pip install -r requirements-dev.txt
           python3 -m playwright install --with-deps chromium
+      - name: 安装中文字体（否则回退字体度量会让排版断言失真）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
       - name: 端到端测试
         run: python3 -m unittest tests.test_ui -v
