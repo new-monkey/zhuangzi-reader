@@ -24,6 +24,10 @@ make build     # → dist/zhuangzi.html （约 520 KB）
 
 快捷键：`/` 搜索 · `V` 横竖切换 · `T` 简繁 · `M` 目录 · `Esc` 关闭面板 · `j` / `k` 上下篇
 
+## 在线预览
+
+<https://new-monkey.github.io/zhuangzi-reader/> —— 由 GitHub Actions 构建后发布到 Pages，和本地打开的是同一个文件。
+
 ## 快速开始
 
 ```bash
