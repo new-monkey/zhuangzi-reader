@@ -67,6 +67,7 @@ zhuangzi-reader/
 │   ├── style.css            #   样式
 │   └── app.js               #   阅读器逻辑（渲染 / 搜索 / 竖排分页 / 设置）
 ├── texts/zhuangzi.txt       # 语料（原文）
+├── docs/ux-spec.md          # 用户体验规范（含移动端/平板专项需求与验收清单）
 ├── tests/
 │   ├── test_build.py        # 解析、转换、产物回归测试（无需浏览器）
 │   └── test_ui.py           # Playwright 端到端冒烟测试
@@ -140,6 +141,11 @@ python3 -m playwright install chromium
 - 原文为公有领域典籍，`texts/zhuangzi.txt` 逐字节随仓库提供，构建结果可复现。
 - 原文本缺少七篇篇题（刻意、田子方、知北游、徐无鬼、盗跖、渔父、列御寇），其正文被并在前一篇中；`zreader/parser.py` 按篇首句自动切分，因此目录是完整的 33 篇（267 段 / 78,339 字）。
 - 语料本身存在少量脱字、讹字与括号夹注（如「奚以这九万里」「掊风」、`(上央下)`），本项目**不做校勘**，以保持语料原貌；如需精校可在 `texts/` 内替换后用 `make build` 重新生成。
+
+## 设计文档
+
+- [`docs/ux-spec.md`](docs/ux-spec.md)：完整的用户体验规范（交互、布局、移动端/平板专项、可访问性、验收清单），
+  每条需求带 `MUST/SHOULD/MAY` 等级、需求编号与「已实现 / 待补」状态。
 
 ## 许可
 
