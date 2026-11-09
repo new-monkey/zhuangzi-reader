@@ -300,7 +300,7 @@ function layoutV(){
   if(plan.length) void book.offsetWidth;
 }
 
-/* 横排：一篇 = 一页（break-before:column），列宽 = 版心宽度 */
+/* 横排：一篇 = 一页（break-before:column），列宽 = 版心宽度，LTR 从左到右 */
 function layoutH(){
   var scs = getComputedStyle(stage);
   var padX = parseFloat(scs.getPropertyValue('--pad-x')) || 22;
@@ -314,13 +314,17 @@ function layoutH(){
   P.pageW = pageW;
   P.pitch = parseFloat(getComputedStyle(book).lineHeight) || (S.fs * S.lh / 100);
   P.perPage = 1;
+  // LTR：记录视口左边界
+  P.left = viewport.getBoundingClientRect().left;
   P.right = viewport.getBoundingClientRect().right;
   P.pageH = viewport.getBoundingClientRect().height;
 }
 
 function measurePages(){
   P.chapterStart = D.chapters.map(function(ch){
-    return (P.right - startRect(ch.ci).right) / P.pageW;
+    // 竖排用右边界计算（RTL），横排用左边界计算（LTR）
+    if(isV()) return (P.right - startRect(ch.ci).right) / P.pageW;
+    return (startRect(ch.ci).left - P.left) / P.pageW;
   });
   var maxPage = 0;
   for(var i = 0; i < paraEls.length; i++){
@@ -328,7 +332,10 @@ function measurePages(){
     for(var j = 0; j < arr.length; j++){
       var r = arr[j].getBoundingClientRect();
       if(!r.width && !r.height) continue;
-      var p = Math.floor((P.right - r.left) / P.pageW + 0.02);
+      // 竖排用右边界，横排用左边界
+      var p = isV()
+        ? Math.floor((P.right - r.left) / P.pageW + 0.02)
+        : Math.floor((r.right - P.left) / P.pageW + 0.02);
       if(p > maxPage) maxPage = p;
     }
   }
@@ -337,7 +344,10 @@ function measurePages(){
 function pageOfEl(el){
   if(!el) return 0;
   var r = el.getBoundingClientRect();          // 含当前位移，先还原成未位移坐标
-  var x = P.right - (r.right - P.shift);
+  // 竖排用右边界计算（RTL），横排用左边界计算（LTR）
+  var x = isV()
+    ? P.right - (r.right - P.shift)
+    : (r.left - P.shift) - P.left;
   return Math.min(P.pages-1, Math.max(0, Math.floor(x / P.pageW + 0.02)));
 }
 function chapterPage(ci){
@@ -360,7 +370,9 @@ function applyShift(px){
 }
 function setPage(p, animate){
   P.page = Math.min(Math.max(0, p|0), P.pages-1);
-  P.shift = P.page * P.pageW;
+  // 竖排 RTL：shift 为正值（book 向右移动）
+  // 横排 LTR：shift 为负值（book 向左移动）
+  P.shift = isV() ? P.page * P.pageW : -P.page * P.pageW;
   if(animate === false){
     book.style.transition = 'none';
   } else {
@@ -644,8 +656,16 @@ function onPointerMove(e){
     if(sel && !sel.isCollapsed) sel.removeAllRanges();
     try{ stage.setPointerCapture(e.pointerId); }catch(err){}
   }
-  var min = -(P.pageW * 0.35);
-  var max = (P.pages-1) * P.pageW + P.pageW * 0.35;
+  // 竖排 RTL：shift 范围 0 到 (pages-1)*pageW
+  // 横排 LTR：shift 范围 -(pages-1)*pageW 到 0
+  var min, max;
+  if(isV()){
+    min = -(P.pageW * 0.35);
+    max = (P.pages-1) * P.pageW + P.pageW * 0.35;
+  } else {
+    min = -(P.pages-1) * P.pageW - P.pageW * 0.35;
+    max = P.pageW * 0.35;
+  }
   var s = Math.max(min, Math.min(max, drag.base + dx));
   applyShift(s);
   e.preventDefault();

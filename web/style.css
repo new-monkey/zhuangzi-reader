@@ -150,16 +150,15 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 .06em}
 mark.cur{background:var(--mark-cur);box-shadow:0 0 0 1px color-mix(in srgb,var(--mark-cur) 60%,transparent)}
 .flash{background:color-mix(in srgb,var(--accent) 12%,transparent)}
 
-/* ------------------------------------------------- 横排（分页，列自右向左） */
+/* ------------------------------------------------- 横排（分页，列自左向右） */
 body[data-mode="h"] #viewport{
   top:var(--pad-y);bottom:calc(var(--pad-y) + 28px);left:0;right:0;margin:0 auto;
 }
 body[data-mode="h"] #book{
-  direction:rtl;               /* 列从右往左排：与竖排同一套翻页方向 */
   width:100%;height:100%;
   column-fill:auto;column-gap:0;
 }
-body[data-mode="h"] .para{direction:ltr;margin:0 0 var(--gap)}
+body[data-mode="h"] .para{margin:0 0 var(--gap)}
 /* 每篇从新的一页开始，篇名落在页首 */
 body[data-mode="h"] .chapter + .chapter{break-before:column}
 body[data-mode="h"] .ch-head{margin:0 0 1.3em;text-align:center;line-height:1.5}
