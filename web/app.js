@@ -626,10 +626,10 @@ function openSearch(){
 /* ------------------------------------------------------------ 手势 */
 var drag = null;
 function dragTarget(dx){
-  // 横排：向左拖 = 下一页（页序左→右，内容向左走）
-  // 竖排：向右拖 = 下一页（页序右→左，内容向右走）
+  // 横排 LTR：向右拖 = 下一页（下一页在右边）
+  // 竖排 RTL：向右拖 = 下一页（下一页在左边，内容向右走露出左边的下一页）
   if(isV()) return dx > 0 ? P.page + 1 : P.page - 1;
-  return dx < 0 ? P.page + 1 : P.page - 1;
+  return dx > 0 ? P.page + 1 : P.page - 1;
 }
 function onPointerDown(e){
   if(panelOpen()) return;
@@ -692,10 +692,11 @@ function onPointerUp(e){
       return;
     }
     // 左右两侧翻页（方向随排版模式镜像）
-    // 横排：点右侧 = 下一页；竖排：点左侧 = 下一页
-    var nextOnLeft = isV();
-    if(nextOnLeft ? x < r.width * 0.32 : x > r.width * 0.68) nextPage();
-    else if(nextOnLeft ? x > r.width * 0.68 : x < r.width * 0.32) prevPage();
+    // 横排 LTR：点右侧 = 下一页（下一页在右边）
+    // 竖排 RTL：点左侧 = 下一页（下一页在左边）
+    var nextOnRight = !isV();
+    if(nextOnRight ? x > r.width * 0.68 : x < r.width * 0.32) nextPage();
+    else if(nextOnRight ? x < r.width * 0.32 : x > r.width * 0.68) prevPage();
     return;
   }
   var dx = e.clientX - d.x0;
@@ -825,9 +826,8 @@ function bind(){
     if(Math.abs(e.deltaY) >= Math.abs(e.deltaX)){
       if(e.deltaY > 0) nextPage(); else prevPage();
     } else {
-      // 横向滚动：横排左=下页，竖排右=下页
-      if(isV()){ if(e.deltaX > 0) nextPage(); else prevPage(); }
-      else { if(e.deltaX < 0) nextPage(); else prevPage(); }
+      // 横向滚动：横排右=下页，竖排右=下页
+      if(e.deltaX > 0) nextPage(); else prevPage();
     }
   }, {passive:false});
 
@@ -863,6 +863,7 @@ function bind(){
     // 方向键按排版模式区分：横排 →=下页 ←=上页；竖排 ←=下页 →=上页
     if(k === 'ArrowDown' || k === 'PageDown' || k === ' '){ e.preventDefault(); nextPage(); }
     else if(k === 'ArrowUp' || k === 'PageUp'){ e.preventDefault(); prevPage(); }
+    // 方向键：横排 →=下一页 ←=上一页；竖排 ←=下一页 →=上一页
     else if(k === 'ArrowLeft'){ e.preventDefault(); isV() ? nextPage() : prevPage(); }
     else if(k === 'ArrowRight'){ e.preventDefault(); isV() ? prevPage() : nextPage(); }
     else if(k === 'Home'){ e.preventDefault(); setPage(0, true); }
