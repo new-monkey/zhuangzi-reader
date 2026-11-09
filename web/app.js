@@ -677,6 +677,25 @@ var Keyboard = {
       var tag = (e.target.tagName||'').toLowerCase();
       var typing = tag === 'input' || tag === 'textarea' || tag === 'select';
 
+      // Focus trap for panels
+      if (e.key === 'Tab' && UI.panelOpen()) {
+        var panel = document.querySelector('.toc-open #toc, .search-open #searchDrawer, .set-open #setDrawer');
+        if (panel) {
+          var focusable = panel.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+          if (focusable.length === 0) return;
+          var first = focusable[0];
+          var last = focusable[focusable.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+        return;
+      }
+
       if ((e.ctrlKey||e.metaKey) && (e.key === 'f' || e.key === 'F')){
         e.preventDefault();
         UI.openSearch();
@@ -870,6 +889,7 @@ var curRes = $('#q-results .res-item.cur');
 /* ============================================================ UI 模块 */
 var UI = {
   curCI: State.position.ci,
+  lastFocusedElement: null,
 
   panelOpen: function(){
     return Renderer.body.classList.contains('toc-open') ||
@@ -878,12 +898,21 @@ var UI = {
   },
 
   openPanel: function(cls){
+    this.lastFocusedElement = document.activeElement;
     this.closePanels(cls);
     Renderer.body.classList.add(cls);
     var sc = Renderer.els.scrim;
     var useScrim = window.innerWidth < 900;
     sc.style.display = useScrim ? 'block' : 'none';
     requestAnimationFrame(function(){ sc.style.opacity = useScrim ? '0.28' : '0'; });
+    
+    // Focus first focusable element in panel
+    setTimeout(function(){
+      var panel = cls === 'toc-open' ? '#toc' : cls === 'search-open' ? '#searchDrawer' : '#setDrawer';
+      var focusable = panel + ' button, ' + panel + ' input, ' + panel + ' select, ' + panel + ' textarea';
+      var first = document.querySelector(focusable);
+      if (first) first.focus();
+    }, 100);
   },
 
   closePanels: function(except){
@@ -896,6 +925,12 @@ var UI = {
         if (Renderer.els.scrim.style.opacity === '0')
           Renderer.els.scrim.style.display = 'none';
       }, 300);
+    }
+    
+    // Return focus to trigger element
+    if (!except && this.lastFocusedElement) {
+      this.lastFocusedElement.focus();
+      this.lastFocusedElement = null;
     }
   },
 
