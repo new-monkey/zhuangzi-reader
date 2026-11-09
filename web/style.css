@@ -173,8 +173,12 @@ body[data-mode="v"] #book{
 body[data-mode="v"] .para{margin:0}
 body[data-mode="v"] .ch-head{
   margin:0;text-align:left;line-height:var(--pitch);
-  /* 锁定一栏：标题字号更大，行盒会被撑高，累积起来会让分页边界逐篇偏移 */
-  width:var(--pitch);
+  /* 篇题独占两栏（整数栏，不影响分页栅格）：
+     标题字号大，行盒比一栏宽，锁一栏会被版心边缘裁掉两侧；
+     给两栏后标题前后自然留白。border 用透明边框吃掉 3px，
+     让版心边缘到标题之间留一点呼吸（border-box，总宽仍为两栏）。 */
+  width:calc(var(--pitch) * 2);
+  border-right:3px solid transparent;
 }
 body[data-mode="v"] .ch-head::after{display:none}
 body[data-mode="v"] .ch-top,body[data-mode="v"] .ch-name{display:inline}

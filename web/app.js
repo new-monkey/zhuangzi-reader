@@ -218,9 +218,8 @@ function measurePitch(){
 function startRect(ci){
   var refs = paraEls[ci-1];
   if(!refs) return book.getBoundingClientRect();
-  if(isV()){
-    return (refs.h.querySelector('.ch-top') || refs.h.querySelector('.ch-name') || refs.h).getBoundingClientRect();
-  }
+  // 竖排：篇题块自带宽度，块右边缘就是篇首栏位（标题文字可能比栏更宽，不能用文字量）
+  if(isV()) return refs.h.getBoundingClientRect();
   return refs.sec.getBoundingClientRect();
 }
 
