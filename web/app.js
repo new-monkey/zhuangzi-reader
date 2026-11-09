@@ -850,7 +850,20 @@ function bind(){
   });
 
   var rt = null;
+  var fullscreenChanging = false;
+  // 全屏切换时标记状态，避免 resize 捕获错误位置
+  document.addEventListener('fullscreenchange', function(){
+    fullscreenChanging = true;
+    clearTimeout(rt);
+    // 全屏切换完成后重新布局，使用当前 pos
+    rt = setTimeout(function(){
+      fullscreenChanging = false;
+      reflow(pos);
+    }, 100);
+  });
   window.addEventListener('resize', function(){
+    // 全屏切换过程中跳过，等 fullscreenchange 处理
+    if(fullscreenChanging) return;
     clearTimeout(rt);
     rt = setTimeout(function(){ reflow(captureAnchor() || pos); }, 180);
   });
