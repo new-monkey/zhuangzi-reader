@@ -137,4 +137,4 @@ python3 -m playwright install chromium
 
 ## 许可
 
-代码以 [MIT](LICENSE) 授权；《庄子》原文属公有领域。
+代码以 [MIT](LICENSE) 授权；`texts/zhuangzi.txt` 所载《庄子》原文属公有领域，详见 [NOTICE](NOTICE)。
