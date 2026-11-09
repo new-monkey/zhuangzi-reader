@@ -57,6 +57,8 @@ body[data-font="hei"]{--book-font:"Noto Sans CJK SC","Source Han Sans SC","PingF
 body[data-font="yuan"]{--book-font:"HYZhongYuanB5","汉仪中圆B5","Yuanti SC","Hiragino Sans GB","PingFang SC",sans-serif}
 
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus{outline:none}
+button:focus-visible,input:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:2px}
 ::selection{background:var(--mark-cur);color:var(--fg)}
 
 /* ------------------------------------------------------------------ 顶栏 */
@@ -167,6 +169,8 @@ body[data-mode="v"] #book{
 body[data-mode="v"] .para{margin:0;text-indent:2em;text-align:justify}
 body[data-mode="v"] .ch-head{
   margin:0;text-align:left;line-height:var(--pitch);letter-spacing:.1em;
+  /* 锁定一栏：标题字号更大，行盒会被撑高，累积起来会让分页边界逐篇偏移 */
+  width:var(--pitch);
 }
 body[data-mode="v"] .ch-head::after{display:none}
 body[data-mode="v"] .ch-top,body[data-mode="v"] .ch-name{display:inline}

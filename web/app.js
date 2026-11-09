@@ -193,10 +193,49 @@ function schedulePos(){
 var vPage = 0, vPages = 1, vPageW = 100, vPitch = 20, vRight = 0, vShift = 0, vChapterStart = [];
 function isV(){ return S.mode === 'v'; }
 
+// 浏览器按 1/64px 存行距，栏距必须落在同一个格子上，否则误差会随栏数累积
+function quantizePitch(px){
+  return Math.floor(px * 64) / 64;
+}
+
+// 竖排下用「一栏一行」的客户矩形实测栏距：比读 line-height 更准，不受取整影响
+var pitchProbe = null;
+function measurePitch(){
+  if(!pitchProbe){
+    pitchProbe = Array.prototype.find.call(document.querySelectorAll('.para'),
+      function(p){ return (p.textContent || '').length > 300; });
+  }
+  if(!pitchProbe) return 0;
+  var range = document.createRange();
+  range.selectNodeContents(pitchProbe);
+  var rects = Array.prototype.slice.call(range.getClientRects());
+  if(rects.length < 3) return 0;
+  var xs = [];
+  rects.forEach(function(r){
+    var x = Math.round(r.left * 64) / 64;
+    if(xs.indexOf(x) < 0) xs.push(x);
+  });
+  xs.sort(function(a, b){ return a - b; });
+  var diffs = [];
+  for(var i = 1; i < xs.length; i++){
+    var d = xs[i] - xs[i-1];
+    if(d > 1) diffs.push(d);
+  }
+  if(!diffs.length) return 0;
+  diffs.sort(function(a, b){ return a - b; });
+  return diffs[Math.floor(diffs.length / 2)];
+}
+
 function vLayout(){
   if(!isV()){
     book.style.transition = 'none';
     book.style.transform = 'none';
+    book.style.lineHeight = '';
+    book.style.removeProperty('--pitch');
+    viewport.style.width = '';
+    viewport.style.right = '';
+    viewport.style.left = '';
+    vShift = 0;
     return;
   }
   book.style.transition = 'none';
@@ -205,21 +244,39 @@ function vLayout(){
   // 清掉上一次的微调，回到样式表里的行距
   book.style.lineHeight = '';
   book.style.removeProperty('--pitch');
+  viewport.style.width = '';
+  viewport.style.right = '';
+  viewport.style.left = '';
   void book.offsetWidth;
 
+  // 版心可用宽度 = stage 宽度 - 左右留白（留白由 CSS 变量 --pad-x 定义）
+  var scs = getComputedStyle(stage);
+  var padX = parseFloat(scs.getPropertyValue('--pad-x')) || 22;
+  var avail = Math.max(40, stage.clientWidth - padX * 2);
   var cs = getComputedStyle(book);
-  var pitch = parseFloat(cs.lineHeight);
-  if(!isFinite(pitch) || pitch <= 0) pitch = S.fs * S.lh / 100;
-  var avail = Math.max(pitch, viewport.clientWidth);
-  var per = Math.max(1, Math.floor(avail / pitch));
-  // 让版心宽度正好等于「整数栏 × 栏距」：把剩余的几个像素摊到行距里，
-  // 这样每页正好切在栏与栏之间，页边不会露出相邻页的半栏字。
-  pitch = avail / per;
-  book.style.lineHeight = pitch + 'px';
-  book.style.setProperty('--pitch', pitch + 'px');
-  void book.offsetWidth;
+  var basePitch = parseFloat(cs.lineHeight);
+  if(!isFinite(basePitch) || basePitch <= 0) basePitch = S.fs * S.lh / 100;
+  var per = Math.max(1, Math.floor(avail / basePitch));
+
+  // 让页宽正好等于「整数栏 × 栏距」：把剩余像素摊进行距（量化到 1/64px），
+  // 再实测一次栏距；若仍超出可用宽度就减一栏重试。
+  var pitch = basePitch, pageW = per * pitch;
+  for(var attempt = 0; attempt < 4; attempt++){
+    var target = quantizePitch(avail / per - 0.02);
+    book.style.lineHeight = target + 'px';
+    book.style.setProperty('--pitch', target + 'px');
+    void book.offsetWidth;
+    pitch = measurePitch() || target;
+    pageW = per * pitch;
+    if(pageW <= avail + 0.02 || per <= 1) break;
+    per -= 1;
+  }
   vPitch = pitch;
-  vPageW = per * pitch;
+  vPageW = pageW;
+  // 裁切边界就是页边界：多余的几像素留作留白，页边不会露出相邻页的半栏字
+  viewport.style.left = 'auto';
+  viewport.style.right = (padX + Math.max(0, avail - pageW) / 2) + 'px';
+  viewport.style.width = pageW + 'px';
   vRight = viewport.getBoundingClientRect().right;
 
   var minLeft = vRight;
@@ -368,6 +425,9 @@ function reflow(anchor, opts){
     book.style.transform = 'none';
     book.style.lineHeight = '';
     book.style.removeProperty('--pitch');
+    viewport.style.width = '';
+    viewport.style.right = '';
+    viewport.style.left = '';
     var refs = paraEls[(anchor.ci||1)-1];
     var el = (!anchor.pi && refs) ? refs.sec : anchorEl(anchor);
     scrollToElH(el);
