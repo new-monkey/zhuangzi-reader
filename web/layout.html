@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="《庄子》（南华经）全文单页阅读器：目录导航、全文搜索、简繁切换、横排/竖排（右起翻页）、字体与排版设置。">
+<meta name="theme-color" content="#faf7ef">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%E5%BA%84%E5%AD%90%20%C2%B7%20%E5%8D%97%E8%8F%AF%E7%B6%93%22%2C%22short_name%22%3A%22%E5%BA%84%E5%AD%90%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22fullscreen%22%2C%22background_color%22%3A%22%23faf7ef%22%2C%22theme_color%22%3A%22%239a6b3f%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%2520viewBox%3D%270%25200%252064%252064%27%253E%253Crect%2520width%3D%2764%27%2520height%3D%2764%27%2520rx%3D%2712%27%2520fill%3D%27%25239a6b3f%27%2F%253E%253Ctext%2520x%3D%2732%27%2520y%3D%2745%27%2520font-size%3D%2738%27%2520text-anchor%3D%27middle%27%2520fill%3D%27%2523faf7ef%27%2520font-family%3D%27serif%27%253E%25E5%25BA%2584%253C%2Ftext%253E%253C%2Fsvg%253E%22%2C%22sizes%22%3A%2264x64%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
+<meta name="description" content="《庄子》（南华经）全文单页阅读器：目录导航、全文搜索、简繁切换、横排/竖排、字体与排版设置、沉浸式阅读。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%239a6b3f'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='%23faf7ef' font-family='serif'%3E庄%3C/text%3E%3C/svg%3E">
 <title>庄子 · 南华经</title>
 <style>
@@ -21,10 +25,11 @@
   <button class="tbtn" id="btn-script" title="简体 / 繁体 (T)">繁</button>
   <button class="tbtn" id="btn-mode" title="横排 / 竖排 (V)">竖排</button>
   <button class="tbtn" id="btn-settings" title="排版设置">Aa</button>
+  <button class="tbtn" id="btn-immersive" title="沉浸模式 (F)">⛶</button>
   <div id="bar"><i></i></div>
 </header>
 
-<aside id="toc">
+<aside id="toc" role="dialog" aria-modal="true" aria-label="目录">
   <div class="toc-head">目 錄</div>
   <div class="toc-scroll" id="toc-list"></div>
 </aside>
@@ -33,13 +38,11 @@
   <div id="stage"><div id="viewport"><article id="book"></article></div></div>
 </main>
 
-<div id="pagebar">
-  <button id="pg-prev" title="上一页（→ 或向左滑）">‹</button>
-  <span id="pg-label">第 1 / 1 页</span>
-  <button id="pg-next" title="下一页（← 或向右滑）">›</button>
+<div id="pagebar" aria-hidden="true">
+  <span id="pg-label" aria-live="polite">第 1 / 1 页</span>
 </div>
 
-<aside id="searchDrawer" class="drawer">
+<aside id="searchDrawer" class="drawer" role="dialog" aria-modal="true" aria-label="搜索">
   <div class="drawer-head">
     <input id="q" type="search" placeholder="全文搜索…（回车下一处）" autocomplete="off" spellcheck="false">
     <button class="iconbtn" id="q-close" title="关闭 (Esc)">✕</button>
@@ -53,7 +56,7 @@
   <div id="q-results"><div class="empty">支持全文检索，可搜索「逍遥」「鲲鹏」「庖丁解牛」…</div></div>
 </aside>
 
-<aside id="setDrawer" class="drawer">
+<aside id="setDrawer" class="drawer" role="dialog" aria-modal="true" aria-label="排版设置">
   <div class="drawer-head">
     <strong>排版</strong>
     <span class="spacer"></span>
@@ -104,17 +107,29 @@
         <button data-v="t">繁体</button>
       </div>
     </div>
+    <div class="row">
+      <label>沉浸阅读</label>
+      <div class="seg">
+        <button id="set-immersive" data-v="off">关闭</button>
+      </div>
+    </div>
     <div class="set-foot">
       <button class="reset" id="set-reset">恢复默认排版</button>
       <div class="hint">
-        <kbd>/</kbd> 搜索　<kbd>V</kbd> 横竖切换　<kbd>T</kbd> 简繁　<kbd>M</kbd> 目录　<kbd>J</kbd>/<kbd>K</kbd> 下/上篇<br>
-        翻页：<kbd>←</kbd> 或向右滑动 = 下一页　<kbd>→</kbd> 或向左滑动 = 上一页　<kbd>Esc</kbd> 关闭面板
+        <kbd>/</kbd> 搜索 <kbd>V</kbd> 横竖切换 <kbd>T</kbd> 简繁 <kbd>M</kbd> 目录 <kbd>J</kbd>/<kbd>K</kbd> 下/上篇<br>
+        横排：<kbd>→</kbd> 或向左滑动 = 下一页 <kbd>←</kbd> 或向右滑动 = 上一页<br>
+        竖排：<kbd>←</kbd> 或向右滑动 = 下一页 <kbd>→</kbd> 或向左滑动 = 上一页<br>
+        <kbd>Esc</kbd> 关闭面板
       </div>
     </div>
   </div>
 </aside>
 
 <div id="scrim"></div>
+
+<div id="immersive-hint" aria-hidden="true">
+  <span>轻点顶部或按 Esc 退出沉浸阅读</span>
+</div>
 
 <script>{{BOOK}}</script>
 <script>{{S2T}}</script>

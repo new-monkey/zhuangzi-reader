@@ -2,8 +2,13 @@
  *
  * 两种排版共用一套「分页」模型：
  *   #viewport 是一页的可见区域（版心），#book 在其内部按列排布；
- *   翻页 = translateX(页号 × 页宽)，下一页永远在当前页左侧，
- *   因此「向右拖动/滑动」= 下一页（横排竖排一致，也是传统右起书的翻法）。
+ *   翻页 = translateX(页号 × 页宽)。
+ *
+ *   翻页方向按排版模式区分（v1.2 修正）：
+ *   - 横排：页序左→右，向左拖/→键/点右侧 = 下一页，内容向左移动
+ *   - 竖排：页序右→左，向右拖/←键/点左侧 = 下一页，内容向右移动
+ *
+ *   两种排版内部结构：
  *   - 竖排：一列 = 一行竖排文字（宽 = 行距），一页 = 若干列
  *   - 横排：一列 = 一页（宽 = 版心宽度），篇与篇之间用 break-before:column 强制换页
  */
@@ -13,8 +18,9 @@ var D = window.__BOOK__, S2T = window.__S2T__, T2S = window.__T2S__;
 var $ = function(s, r){ return (r||document).querySelector(s); };
 var $$ = function(s, r){ return Array.prototype.slice.call((r||document).querySelectorAll(s)); };
 var KEY = 'zhuangzi.reader.v3';
-var DEF = {theme:'paper', font:'song', fs:19, lh:195, measure:36, gap:10, mode:'h', script:'s'};
+var DEF = {theme:'paper', font:'song', fs:19, lh:195, measure:36, gap:10, mode:'h', script:'s', immersive:false};
 var S = {}, pos = {ci:1, pi:0};
+var immersiveHintShown = false;
 
 try{
   var raw = localStorage.getItem(KEY) || localStorage.getItem('zhuangzi.reader.v2');
@@ -32,6 +38,7 @@ var paraEls = [];       // [{sec,h,arr}]
 function isV(){ return S.mode === 'v'; }
 
 /* ------------------------------------------------------------ 设置应用 */
+var themeColorMap = {paper:'#faf7ef', sepia:'#f0e6d1', green:'#edf3ea', ink:'#fff', night:'#14171d'};
 function apply(){
   var pitchPx = Math.max(8, Math.round(S.fs * S.lh / 100));
   root.style.setProperty('--fs', S.fs+'px');
@@ -47,6 +54,11 @@ function apply(){
   $('#btn-mode').textContent = S.mode==='v' ? '横排' : '竖排';
   $('#btn-script').textContent = S.script==='s' ? '繁' : '简';
   root.lang = S.script==='s' ? 'zh-Hans' : 'zh-Hant';
+  // theme-color 随主题变化
+  var tc = $('meta[name="theme-color"]');
+  if(tc) tc.content = themeColorMap[S.theme] || '#faf7ef';
+  // 沉浸模式
+  applyImmersive();
   syncSetUI();
 }
 function syncSetUI(){
@@ -58,6 +70,8 @@ function syncSetUI(){
   $('#set-lh').value = S.lh; $('#v-lh').textContent = (S.lh/100).toFixed(2);
   $('#set-mw').value = S.measure; $('#v-mw').textContent = S.measure+' 字';
   $('#set-gap').value = S.gap; $('#v-gap').textContent = (S.gap/10).toFixed(1)+'em';
+  var immBtn = $('#set-immersive');
+  if(immBtn){ immBtn.textContent = S.immersive ? '已开启' : '关闭'; immBtn.classList.toggle('on', S.immersive); }
 }
 
 /* ------------------------------------------------------------ 正文渲染 */
@@ -364,8 +378,14 @@ function nextPage(){ if(P.page < P.pages-1) setPage(P.page+1, true); }
 function prevPage(){ if(P.page > 0) setPage(P.page-1, true); }
 function updatePageBar(){
   $('#pg-label').textContent = '第 ' + (P.page+1) + ' / ' + P.pages + ' 页';
-  $('#pg-prev').disabled = P.page <= 0;
-  $('#pg-next').disabled = P.page >= P.pages-1;
+  showPageBar();
+}
+var pageBarTimer = null;
+function showPageBar(){
+  var bar = $('#pagebar');
+  bar.classList.add('show');
+  clearTimeout(pageBarTimer);
+  pageBarTimer = setTimeout(function(){ bar.classList.remove('show'); }, 3000);
 }
 function updateProgress(){
   var pct = P.pages <= 1 ? 1 : (P.page+1)/P.pages;
@@ -594,15 +614,22 @@ function openSearch(){
 /* ------------------------------------------------------------ 手势 */
 var drag = null;
 function dragTarget(dx){
-  // 向右拖动 = 下一页（下一页在左侧）
-  if(dx > 0) return P.page + 1;
-  return P.page - 1;
+  // 横排：向左拖 = 下一页（页序左→右，内容向左走）
+  // 竖排：向右拖 = 下一页（页序右→左，内容向右走）
+  if(isV()) return dx > 0 ? P.page + 1 : P.page - 1;
+  return dx < 0 ? P.page + 1 : P.page - 1;
 }
 function onPointerDown(e){
   if(panelOpen()) return;
   if(e.pointerType === 'mouse' && e.button !== 0) return;
   var sel = window.getSelection();
   if(sel && !sel.isCollapsed) return;
+  // 边缘 20px 内不翻页，让位系统手势（iOS 侧滑返回 / Android 手势返回）
+  var r = stage.getBoundingClientRect();
+  var xFromEdge = Math.min(e.clientX - r.left, r.right - e.clientX);
+  if(xFromEdge < 20) return;
+  // 顶部 20px 内不拦截，让位系统下拉（通知中心）
+  if(e.clientY - r.top < 20) return;
   drag = {x0: e.clientX, y0: e.clientY, base: P.shift, moved: false, id: e.pointerId};
 }
 function onPointerMove(e){
@@ -630,18 +657,60 @@ function onPointerUp(e){
   body.classList.remove('dragging');
   try{ stage.releasePointerCapture(e.pointerId); }catch(err){}
   if(!d.moved){
-    // 轻点：左右两侧翻页
     var r = stage.getBoundingClientRect();
     var x = e.clientX - r.left;
-    if(x < r.width * 0.32) nextPage();
-    else if(x > r.width * 0.68) prevPage();
-    else setPage(P.page, true);
+    var y = e.clientY - r.top;
+    // 沉浸模式下：轻点顶部 15% 退出
+    if(S.immersive && y < r.height * 0.15){
+      toggleImmersive(false);
+      return;
+    }
+    // 轻点中部 1/3 = 切换沉浸模式
+    var xRatio = x / r.width;
+    if(xRatio >= 0.32 && xRatio <= 0.68){
+      toggleImmersive();
+      return;
+    }
+    // 左右两侧翻页（方向随排版模式镜像）
+    // 横排：点右侧 = 下一页；竖排：点左侧 = 下一页
+    var nextOnLeft = isV();
+    if(nextOnLeft ? x < r.width * 0.32 : x > r.width * 0.68) nextPage();
+    else if(nextOnLeft ? x > r.width * 0.68 : x < r.width * 0.32) prevPage();
     return;
   }
   var dx = e.clientX - d.x0;
   var threshold = Math.min(90, P.pageW * 0.18);
   var target = Math.abs(dx) > threshold ? dragTarget(dx) : P.page;
   setPage(target, true);
+}
+
+/* ------------------------------------------------------------ 沉浸模式 */
+function applyImmersive(){
+  body.classList.toggle('immersive', !!S.immersive);
+  var btn = $('#btn-immersive');
+  if(btn) btn.classList.toggle('on', !!S.immersive);
+}
+function toggleImmersive(force){
+  var next = force !== undefined ? force : !S.immersive;
+  if(next === S.immersive) return;
+  S.immersive = next;
+  apply();
+  save();
+  // 尝试进入全屏
+  if(next && document.documentElement.requestFullscreen){
+    document.documentElement.requestFullscreen().catch(function(){});
+  } else if(!next && document.exitFullscreen && document.fullscreenElement){
+    document.exitFullscreen().catch(function(){});
+  }
+  // 首次进入显示提示
+  if(next && !immersiveHintShown){
+    immersiveHintShown = true;
+    var hint = $('#immersive-hint');
+    if(hint){
+      hint.classList.add('show');
+      setTimeout(function(){ hint.classList.remove('show'); }, 3000);
+    }
+  }
 }
 
 /* ------------------------------------------------------------ 绑定 */
@@ -658,6 +727,11 @@ function bind(){
   $('#q-close').addEventListener('click', function(){ closePanels(); });
   $('#set-close').addEventListener('click', function(){ closePanels(); });
   $('#scrim').addEventListener('click', function(){ closePanels(); });
+  // 沉浸模式按钮
+  var immBtn = $('#btn-immersive');
+  if(immBtn) immBtn.addEventListener('click', function(){ toggleImmersive(); });
+  var setImmBtn = $('#set-immersive');
+  if(setImmBtn) setImmBtn.addEventListener('click', function(){ toggleImmersive(); });
 
   $('#q-next').addEventListener('click', function(){ if(hits.length) gotoHit(hitIdx+1 < hits.length ? hitIdx+1 : 0); });
   $('#q-prev').addEventListener('click', function(){ if(hits.length) gotoHit(hitIdx-1 >= 0 ? hitIdx-1 : hits.length-1); });
@@ -711,16 +785,14 @@ function bind(){
     S = Object.assign({}, DEF); apply(); save(); reflow(pos);
   });
 
-  $('#pg-prev').addEventListener('click', prevPage);
-  $('#pg-next').addEventListener('click', nextPage);
-
   // 拖拽 / 轻点翻页
   stage.addEventListener('pointerdown', onPointerDown);
   stage.addEventListener('pointermove', onPointerMove);
   stage.addEventListener('pointerup', onPointerUp);
   stage.addEventListener('pointercancel', onPointerUp);
 
-  // 滚轮：向下 / 向右 = 下一页
+  // 滚轮：向下 = 下一页（两种排版一致）
+  // 触控板横滑：横排向左滑 = 下一页；竖排向右滑 = 下一页
   var wheelLock = false;
   reader.addEventListener('wheel', function(e){
     if(panelOpen()) return;
@@ -729,7 +801,14 @@ function bind(){
     if(Math.abs(d) < 3 || wheelLock) return;
     wheelLock = true;
     setTimeout(function(){ wheelLock = false; }, 180);
-    if(d > 0) nextPage(); else prevPage();
+    // 纵向滚动：向下 = 下一页
+    if(Math.abs(e.deltaY) >= Math.abs(e.deltaX)){
+      if(e.deltaY > 0) nextPage(); else prevPage();
+    } else {
+      // 横向滚动：横排左=下页，竖排右=下页
+      if(isV()){ if(e.deltaX > 0) nextPage(); else prevPage(); }
+      else { if(e.deltaX < 0) nextPage(); else prevPage(); }
+    }
   }, {passive:false});
 
   // 点篇名回到本篇开头
@@ -747,7 +826,12 @@ function bind(){
     if(typing) return;
     var k = e.key;
     if(k === '/'){ e.preventDefault(); openSearch(); return; }
-    if(k === 'Escape'){ closePanels(); return; }
+    if(k === 'Escape'){
+      if(S.immersive){ toggleImmersive(false); }
+      else { closePanels(); }
+      return;
+    }
+    if(k === 'f' || k === 'F'){ toggleImmersive(); return; }
     if(k === 'm' || k === 'M'){
       if(body.classList.contains('toc-open')) closePanels(); else openPanel('toc-open');
       return;
@@ -756,8 +840,11 @@ function bind(){
     if(k === 't' || k === 'T'){ setScript(S.script==='s'?'t':'s'); return; }
     if(k === 'j'){ goAdjacentChapter(1); return; }
     if(k === 'k'){ goAdjacentChapter(-1); return; }
-    if(k === 'ArrowLeft' || k === 'ArrowDown' || k === 'PageDown' || k === ' '){ e.preventDefault(); nextPage(); }
-    else if(k === 'ArrowRight' || k === 'ArrowUp' || k === 'PageUp'){ e.preventDefault(); prevPage(); }
+    // 方向键按排版模式区分：横排 →=下页 ←=上页；竖排 ←=下页 →=上页
+    if(k === 'ArrowDown' || k === 'PageDown' || k === ' '){ e.preventDefault(); nextPage(); }
+    else if(k === 'ArrowUp' || k === 'PageUp'){ e.preventDefault(); prevPage(); }
+    else if(k === 'ArrowLeft'){ e.preventDefault(); isV() ? nextPage() : prevPage(); }
+    else if(k === 'ArrowRight'){ e.preventDefault(); isV() ? prevPage() : nextPage(); }
     else if(k === 'Home'){ e.preventDefault(); setPage(0, true); }
     else if(k === 'End'){ e.preventDefault(); setPage(P.pages-1, true); }
   });
