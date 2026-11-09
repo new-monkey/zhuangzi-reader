@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" data-theme="paper">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="《庄子》（南华经）全文单页阅读器：目录导航、全文搜索、简繁切换、横排/竖排（右起翻页）、字体与排版设置。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%239a6b3f'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='%23faf7ef' font-family='serif'%3E庄%3C/text%3E%3C/svg%3E">
+<title>庄子 · 南华经</title>
+<style>
+{{STYLE}}
+</style>
+</head>
+<body data-mode="h" data-script="s" data-font="song" data-theme="paper">
+
+<header id="topbar">
+  <button class="tbtn ghost" id="btn-toc" title="目录 (M)">目录</button>
+  <div class="brand">莊子<em>南華經</em></div>
+  <div class="topic" id="topic"></div>
+  <button class="tbtn" id="btn-search" title="全文搜索 (/)">搜索</button>
+  <button class="tbtn" id="btn-script" title="简体 / 繁体 (T)">繁</button>
+  <button class="tbtn" id="btn-mode" title="横排 / 竖排 (V)">竖排</button>
+  <button class="tbtn" id="btn-settings" title="排版设置">Aa</button>
+  <div id="bar"><i></i></div>
+</header>
+
+<aside id="toc">
+  <div class="toc-head">目 錄</div>
+  <div class="toc-scroll" id="toc-list"></div>
+</aside>
+
+<main id="reader">
+  <div id="stage"><div id="viewport"><article id="book"></article></div></div>
+</main>
+
+<div id="pagebar">
+  <button id="pg-prev" title="上一页 (→)">‹</button>
+  <span id="pg-label">第 1 / 1 页</span>
+  <button id="pg-next" title="下一页 (←)">›</button>
+</div>
+
+<aside id="searchDrawer" class="drawer">
+  <div class="drawer-head">
+    <input id="q" type="search" placeholder="全文搜索…（回车下一处）" autocomplete="off" spellcheck="false">
+    <button class="iconbtn" id="q-close" title="关闭 (Esc)">✕</button>
+  </div>
+  <div class="search-meta">
+    <span id="q-count">输入关键词开始搜索</span>
+    <span class="spacer"></span>
+    <button class="mini" id="q-prev" disabled>上一处</button>
+    <button class="mini" id="q-next" disabled>下一处</button>
+  </div>
+  <div id="q-results"><div class="empty">支持全文检索，可搜索「逍遥」「鲲鹏」「庖丁解牛」…</div></div>
+</aside>
+
+<aside id="setDrawer" class="drawer">
+  <div class="drawer-head">
+    <strong>排版</strong>
+    <span class="spacer"></span>
+    <button class="iconbtn" id="set-close" title="关闭 (Esc)">✕</button>
+  </div>
+  <div class="set-body">
+    <div class="row">
+      <label>主题</label>
+      <div class="themes" id="theme-swatches"></div>
+    </div>
+    <div class="row">
+      <label>字体</label>
+      <div class="seg" id="seg-font">
+        <button data-v="song">宋体</button>
+        <button data-v="kai">楷体</button>
+        <button data-v="fang">仿宋</button>
+        <button data-v="hei">黑体</button>
+        <button data-v="yuan">圆体</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>字号 <b id="v-fs"></b></label>
+      <input type="range" id="set-fs" min="14" max="36" step="1">
+    </div>
+    <div class="row">
+      <label>行距 <b id="v-lh"></b></label>
+      <input type="range" id="set-lh" min="140" max="300" step="5">
+    </div>
+    <div class="row">
+      <label>版心宽度 <b id="v-mw"></b></label>
+      <input type="range" id="set-mw" min="18" max="70" step="1">
+    </div>
+    <div class="row">
+      <label>段间距 <b id="v-gap"></b></label>
+      <input type="range" id="set-gap" min="0" max="30" step="1">
+    </div>
+    <div class="row">
+      <label>排列</label>
+      <div class="seg" id="seg-mode">
+        <button data-v="h">横排</button>
+        <button data-v="v">竖排（右起）</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>字形</label>
+      <div class="seg" id="seg-script">
+        <button data-v="s">简体</button>
+        <button data-v="t">繁体</button>
+      </div>
+    </div>
+    <div class="set-foot">
+      <button class="reset" id="set-reset">恢复默认排版</button>
+      <div class="hint">
+        <kbd>/</kbd> 搜索　<kbd>V</kbd> 横竖切换　<kbd>T</kbd> 简繁　<kbd>M</kbd> 目录<br>
+        竖排：<kbd>←</kbd> 下一页　<kbd>→</kbd> 上一页　<kbd>Esc</kbd> 关闭面板
+      </div>
+    </div>
+  </div>
+</aside>
+
+<div id="scrim"></div>
+
+<script>{{BOOK}}</script>
+<script>{{S2T}}</script>
+<script>{{T2S}}</script>
+<script>
+{{APP}}
+</script>
+</body>
+</html>
