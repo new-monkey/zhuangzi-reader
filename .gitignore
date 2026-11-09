@@ -1,0 +1,25 @@
+# ---- 构建产物 ----
+dist/
+*.html.tmp
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+*.egg-info/
+.pytest_cache/
+
+# ---- 测试与工具 ----
+shots/
+screenshots/
+.playwright/
+node_modules/
+*.log
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+.idea/
+.vscode/
+*.swp

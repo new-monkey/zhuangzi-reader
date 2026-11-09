@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.txt      text eol=lf
+*.md       text eol=lf
+*.py       text eol=lf
+*.html     text eol=lf
+*.css      text eol=lf
+*.js       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+Makefile   text eol=lf
+
+# 语料是逐字节可复现的，构建结果依赖它
+texts/zhuangzi.txt -diff linguist-vendored=false

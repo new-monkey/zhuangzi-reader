@@ -1,0 +1,2 @@
+# 构建期依赖（成品 HTML 无任何运行时依赖）
+opencc-python-reimplemented>=0.1.7
