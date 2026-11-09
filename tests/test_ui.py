@@ -231,6 +231,39 @@ class ReaderTest(unittest.TestCase):
         self.assertEqual(self.page.inner_text("#topic"), "知北游｜第二十二")
         self.assertFalse(self.page.evaluate("() => document.body.classList.contains('toc-open')"))
 
+    def test_small_screen_layout(self) -> None:
+        """小屏（< 600px）下页码条不重排，触控热区 ≥ 44px。"""
+        self.context.close()
+        small = {"width": 375, "height": 667}  # iPhone SE
+        self._open(small)
+        self._vertical()
+        self.page.wait_for_timeout(400)
+
+        # 页码条应该可见且为浮层（fixed 定位，不占文档流）
+        pagebar = self.page.locator("#pagebar")
+        self.assertTrue(pagebar.is_visible())
+        pagebar_box = pagebar.bounding_box()
+        self.assertIsNotNone(pagebar_box)
+        # 页码条应该在底部
+        self.assertGreater(pagebar_box["y"], small["height"] - 100)
+
+        # 顶栏按钮触控热区 ≥ 44px
+        buttons = self.page.locator("#topbar .tbtn").all()
+        for btn in buttons:
+            box = btn.bounding_box()
+            self.assertIsNotNone(box)
+            self.assertGreaterEqual(box["width"], 44, f"按钮宽 {box['width']}px < 44px")
+            self.assertGreaterEqual(box["height"], 44, f"按钮高 {box['height']}px < 44px")
+
+        # 切换横排后再次验证
+        self.page.keyboard.press("v")
+        self.page.wait_for_timeout(400)
+        for btn in buttons:
+            box = btn.bounding_box()
+            self.assertIsNotNone(box)
+            self.assertGreaterEqual(box["width"], 44)
+            self.assertGreaterEqual(box["height"], 44)
+
 
 if __name__ == "__main__":
     unittest.main()

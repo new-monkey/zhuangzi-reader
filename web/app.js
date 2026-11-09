@@ -1291,6 +1291,33 @@ var UI = {
         Pagination.reflow(Pagination.captureAnchor() || State.position);
       }, 300);
     });
+
+    // Visual Viewport API: detect soft keyboard open/close on mobile
+    if (window.visualViewport){
+      var initialViewportHeight = window.visualViewport.height;
+      var viewportAdjusting = false;
+
+      window.visualViewport.addEventListener('resize', function(){
+        if (viewportAdjusting) return;
+        viewportAdjusting = true;
+
+        var currentHeight = window.visualViewport.height;
+        var heightDiff = initialViewportHeight - currentHeight;
+
+        // Keyboard typically opens when viewport shrinks by > 150px
+        if (heightDiff > 150){
+          Renderer.body.classList.add('keyboard-open');
+          // Adjust viewport position to keep content visible
+          var offsetTop = window.visualViewport.offsetTop;
+          Renderer.els.stage.style.setProperty('--keyboard-offset', offsetTop + 'px');
+        } else if (heightDiff < 50){
+          Renderer.body.classList.remove('keyboard-open');
+          Renderer.els.stage.style.removeProperty('--keyboard-offset');
+        }
+
+        setTimeout(function(){ viewportAdjustting = false; }, 100);
+      });
+    }
   }
 };
 

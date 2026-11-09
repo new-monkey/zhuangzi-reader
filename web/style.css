@@ -340,6 +340,15 @@ body.immersive[data-mode="v"] #viewport{bottom:var(--pad-y)}
     animation-duration:0s!important;
   }
 }
+
+/* 软键盘打开时调整布局 */
+body.keyboard-open #reader{
+  height:calc(100vh - var(--keyboard-offset, 0px));
+}
+body.keyboard-open #stage{
+  height:100%;
+}
+
 @media print{
   #topbar,#toc,.drawer,#pagebar,#bar{display:none!important}
   body,#reader,#stage,#viewport{position:static!important;overflow:visible!important}
