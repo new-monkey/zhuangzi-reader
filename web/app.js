@@ -52,11 +52,11 @@ var Strategy = {
   h: {
     name: 'horizontal',
     pageOrder: 'ltr',
-    dragNext: 1,
+    dragNext: -1,
     clickNextSide: 'right',
     keyNext: 'ArrowRight',
     keyPrev: 'ArrowLeft',
-    wheelNext: 1,
+    wheelNext: -1,
     shiftSign: -1,
     dragBounds: function(P){
       return {
