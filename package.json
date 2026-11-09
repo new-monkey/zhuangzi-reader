@@ -1,0 +1,15 @@
+{
+  "name": "zhuangzi-reader-tests",
+  "version": "1.0.0",
+  "description": "UX Spec 自动化测试",
+  "scripts": {
+    "test": "playwright test",
+    "test:ux": "playwright test tests/ux.spec.js",
+    "test:a11y": "playwright test tests/a11y.spec.js",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "axe-playwright": "^1.2.3"
+  }
+}

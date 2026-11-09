@@ -1,6 +1,7 @@
 PY ?= python3
+NPX ?= npx
 
-.PHONY: all build test test-ui serve clean check help
+.PHONY: all build test test-ui test-ux test-a11y serve clean check help
 
 all: build ## 构建 dist/zhuangzi.html
 
@@ -14,13 +15,21 @@ test-ui: ## 端到端冒烟测试（需要 playwright + chromium）
 	$(PY) build.py --quiet
 	$(PY) -m unittest tests.test_ui -v
 
-check: test test-ui ## 全部测试
+test-ux: build ## UX Spec 自动化测试（需要 npm install）
+	$(NPX) playwright test tests/ux.spec.js
+
+test-a11y: build ## 可访问性测试
+	$(NPX) playwright test tests/a11y.spec.js
+
+test-all: test test-ui test-ux test-a11y ## 全部测试
+
+check: test test-ui ## 基础测试
 
 serve: build ## 本地起一个静态服务器预览（http://127.0.0.1:8000/zhuangzi.html）
 	$(PY) -m http.server 8000 --directory dist
 
 clean: ## 清理构建产物与缓存
-	rm -rf dist __pycache__ zreader/__pycache__ tests/__pycache__
+	rm -rf dist __pycache__ zreader/__pycache__ tests/__pycache__ test-results playwright-report
 
 help: ## 显示本帮助
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t
